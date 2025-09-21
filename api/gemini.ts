@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
-import { withApiHandler } from '../lib/apiHandler';
+import { withApiHandler } from '../lib/apiHandler.js';
 
 // 从环境变量中获取API密钥
 const API_KEY = process.env.GEMINI_API_KEY;
