@@ -14,7 +14,7 @@ if (!API_KEY) {
 const genAI = new GoogleGenerativeAI(API_KEY);
 
 const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.5-flash",
     // 建议配置安全设置，以减少因安全问题导致的响应中断
     safetySettings: [
         {
