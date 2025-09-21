@@ -1,15 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// 从环境变量中安全地读取Cookie
+// Safely read the Cookie from environment variables
 const WEIBO_COOKIE = process.env.WEIBO_COOKIE;
 
-// 使用你指定的API地址
+// Use the API address you specified
 const WEIBO_API_URL = 'https://m.weibo.cn/api/container/getIndex?containerid=106003type%3D25%26t%3D3%26disable_hot%3D1%26filter_type%3Drealtimehot';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // 检查Cookie是否已配置
+export default async function handler(_req: VercelRequest, res: VercelResponse) {
+  // Check if the Cookie has been configured
   if (!WEIBO_COOKIE) {
-    return res.status(500).json({ error: '后端服务尚未配置微博Cookie' });
+    return res.status(500).json({ error: 'Backend service has not configured Weibo Cookie' });
   }
 
   try {
@@ -21,17 +21,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (!response.ok) {
-      throw new Error(`请求微博官方API失败: ${response.status}`);
+      throw new Error(`Request to official Weibo API failed: ${response.status}`);
     }
     
-    // 返回JSON数据
+    // Return JSON data
     const data = await response.json();
 
-    // 解析你提供的API地址返回的复杂JSON结构
+    // Parse the complex JSON structure returned by the API address you provided
     const cardGroup = data?.data?.cards?.[0]?.card_group;
     if (!Array.isArray(cardGroup)) {
-      console.error('微博API返回数据结构异常或Cookie失效:', data);
-      throw new Error('微博API返回数据结构异常或Cookie失效');
+      console.error('Abnormal data structure returned from Weibo API or Cookie is invalid:', data);
+      throw new Error('Abnormal data structure returned from Weibo API or Cookie is invalid');
     }
 
     const finalTrends = cardGroup
@@ -42,12 +42,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         url: `https://m.s.weibo.com/weibo?q=${encodeURIComponent(`#${item.desc}#`)}`
       }));
     
+    // Set caching headers. This caches the content on the CDN for 10 minutes.
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=300');
     res.status(200).json(finalTrends);
 
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : '未知错误';
-    console.error(`后端服务(/weibo)出错: ${errorMessage}`);
-    res.status(500).json({ error: `后端服务出错: ${errorMessage}` });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Backend service (/weibo) error: ${errorMessage}`);
+    res.status(500).json({ error: `Backend service error: ${errorMessage}` });
   }
 }
