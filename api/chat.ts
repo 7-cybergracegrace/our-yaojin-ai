@@ -1,14 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-// 路径更新：使用相对路径从项目根目录的其他文件夹导入
-import * as character from '../core/characterSheet';
-import { handleDaoistDailyChoice } from '../services/daoistDailyService';
-import { Message, IntimacyLevel, Flow } from '../types';
-
-// --- 关键改动(1/2): 更新导入路径 ---
-// 导入不再指向 api 目录下的文件，而是直接指向新建的 lib 目录
-import { fetchWeiboNewsLogic } from '../lib/weibo';
-import { fetchDoubanMoviesLogic } from '../lib/douban';
+// --- 核心修复：确保所有本地模块的导入都包含 .js 后缀 ---
+import * as character from '../core/characterSheet.js';
+import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
+import { Message, IntimacyLevel, Flow } from '../types/index.js';
+import { fetchWeiboNewsLogic } from '../lib/weibo.js';
+import { fetchDoubanMoviesLogic } from '../lib/douban.js';
 
 
 // 获取环境变量中的API密钥
@@ -21,8 +18,7 @@ const genAI = new GoogleGenerativeAI(API_KEY || '');
 const chatModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 const triageModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-// --- 关键改动(2/2): 更新函数调用 ---
-// 移除不必要的内部 fetch，直接调用导入的逻辑函数，更高效、更稳定
+// 直接调用导入的逻辑函数
 async function getWeiboNews(): Promise<any[] | null> {
     try {
         return await fetchWeiboNewsLogic();
@@ -41,7 +37,7 @@ async function getDoubanMovies(): Promise<any[] | null> {
     }
 }
 
-// === 意图分流函数 ===
+// === 意图分流函数 (代码无变化) ===
 async function runTriage(userInput: string, userName: string, intimacy: IntimacyLevel): Promise<{ action: 'CONTINUE_CHAT' | 'guidance' | 'game' | 'news' | 'daily' }> {
     const triagePrompt = `
     # 指令
@@ -69,7 +65,7 @@ async function runTriage(userInput: string, userName: string, intimacy: Intimacy
     }
 }
 
-// === 核心对话逻辑 ===
+// === 核心对话逻辑 (代码无变化) ===
 async function* sendMessageStream(
     text: string,
     imageBase64: string | null,
@@ -135,7 +131,7 @@ async function* sendMessageStream(
     }
 }
 
-// === 辅助函数 ===
+// === 辅助函数 (代码无变化) ===
 const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: Flow): string => {
     let instruction = `你是${character.persona.name}，${character.persona.description}
     你的语言和行为必须严格遵守以下规则：
@@ -210,7 +206,7 @@ const convertToApiMessages = (history: Message[], systemInstruction: string, tex
 };
 
 
-// Vercel/Next.js 会将这个文件映射到 /api/chat 路由
+// Vercel/Next.js 会将这个文件映射到 /api/chat 路由 (代码无变化)
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', ['POST']);
@@ -278,6 +274,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
     }
 }
+
+
 
 
 
