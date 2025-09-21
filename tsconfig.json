@@ -1,27 +1,37 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "useDefineForClassFields": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
-    "moduleResolution": "bundler",
+    "moduleResolution": "bundler", // 或者 "node"，取决于您的项目设置
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
+
+    /* 严格性检查 */
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+
+    /* 路径别名配置 */
+    // "baseUrl" 和 "paths" 共同作用，让您在开发时可以使用别名（如 '@/'）。
+    // 这对于代码编辑器（如VS Code）和TypeScript编译器是有效的。
+    // !!重要提示!! Vercel的线上Node.js运行环境无法识别这些别名。
+    // 因此，在您的 .ts 文件中，导入您自己的模块时，请务必使用相对路径（如 '../core/characterSheet'）。
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"],
-      "@core/*": ["./core/*"],
-      "@services/*": ["./services/*"]
+      "@/*": ["./*"]
+      // 您也可以根据需要定义更具体的别名
+      // "@core/*": ["./core/*"],
+      // "@services/*": ["./services/*"]
     }
   },
-  "include": ["api", "core", "services", "."]
+  // "include" 告诉 TypeScript 要检查哪些目录下的文件。
+  "include": ["api", "core", "services", "types", "**/*.ts", "**/*.tsx"]
 }
+
