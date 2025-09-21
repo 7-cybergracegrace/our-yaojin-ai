@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-// 从新的 lib 目录导入核心逻辑
-import { fetchWeiboNewsLogic } from '../lib/weibo';
+// 核心修复：在导入路径的末尾添加 .js 后缀
+import { fetchWeiboNewsLogic } from '../lib/weibo.js';
 
-// 这个文件现在只作为 API 路由的入口
+// 这个文件现在非常简洁，只作为 API 的入口
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
     try {
         // 直接调用导入的逻辑函数
