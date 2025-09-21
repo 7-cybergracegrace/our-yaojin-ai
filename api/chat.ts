@@ -1,38 +1,28 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
-// --- 核心修复：确保所有本地模块的导入都包含 .js 后缀 ---
-import * as character from '../core/characterSheet.js';
-import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
-import { Message, IntimacyLevel, Flow } from '../types/index.js';
-import { fetchWeiboNewsLogic } from '../lib/weibo.js';
-import { fetchDoubanMoviesLogic } from '../lib/douban.js';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+// 路径更新：使用相对路径从项目根目录的其他文件夹导入
+import * as character from '../core/characterSheet';
+import { handleDaoistDailyChoice } from '../services/daoistDailyService';
+import { Message, IntimacyLevel, Flow } from '../types';
+
+// --- 关键改动(1/2): 更新导入路径 ---
+// 导入不再指向 api 目录下的文件，而是直接指向新建的 lib 目录
+import { fetchWeiboNewsLogic } from '../lib/weibo';
+import { fetchDoubanMoviesLogic } from '../lib/douban';
 
 
 // 获取环境变量中的API密钥
 const API_KEY = process.env.GEMINI_API_KEY;
 
-// 在启动时检查API密钥，如果不存在则抛出错误
-if (!API_KEY) {
-    throw new Error('GEMINI_API_KEY environment variable not found.');
-}
+// 确保 API_KEY 在调用时存在，避免服务冷启动失败
+const genAI = new GoogleGenerativeAI(API_KEY || '');
 
-const genAI = new GoogleGenerativeAI(API_KEY);
+// === 后端函数：AI模型和外部数据获取 ===
+const chatModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const triageModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-// === 模型定义 (已更新) ===
-const modelConfig = {
-    safetySettings: [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-    ],
-};
-
-const chatModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', ...modelConfig });
-const triageModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', ...modelConfig });
-// --- 修改：根据您的要求，初始化指定的文生图模型 ---
-const imageModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-preview-image-generation', ...modelConfig });
-
-
-// === 外部数据获取函数 ===
+// --- 关键改动(2/2): 更新函数调用 ---
+// 移除不必要的内部 fetch，直接调用导入的逻辑函数，更高效、更稳定
 async function getWeiboNews(): Promise<any[] | null> {
     try {
         return await fetchWeiboNewsLogic();
@@ -79,7 +69,7 @@ async function runTriage(userInput: string, userName: string, intimacy: Intimacy
     }
 }
 
-// === 核心对话逻辑 (已更新) ===
+// === 核心对话逻辑 ===
 async function* sendMessageStream(
     text: string,
     imageBase64: string | null,
@@ -91,37 +81,8 @@ async function* sendMessageStream(
     try {
         let systemInstruction = getSystemInstruction(intimacy, userName, flow);
         let externalContext: string | null = null;
+        let finalPrompt = text;
         
-        // --- 核心修改：更新“你说我画”的游戏逻辑 ---
-        const isDrawingRequest = flow === 'game' && (text.includes('画一') || text.includes('画个') || text.includes('生成'));
-        if (isDrawingRequest) {
-            systemInstruction += `\n${character.gameRules.games['你说我画']}`;
-            yield { text: "好嘞，看本道仙为你挥毫泼墨，稍等片刻...", isLoading: true };
-
-            const imagePrompt = text; // 直接使用用户的输入作为图片生成的提示
-
-            // --- 使用您指定的 gemini-2.0-flash-preview-image-generation 模型进行文生图 ---
-            const result = await imageModel.generateContent(imagePrompt);
-            const response = await result.response;
-            
-            // 从响应中找到图片数据
-            const imagePart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-
-            if (imagePart && imagePart.inlineData) {
-                const base64Data = imagePart.inlineData.data;
-                // 返回包含图片的最终消息
-                yield { 
-                    text: "大功告成！你看如何？", 
-                    generatedImageBase64: base64Data, 
-                    isLoading: false 
-                };
-            } else {
-                 yield { text: "哎呀，今日灵感枯竭，画不出来了...换个东西画吧？", isLoading: false };
-            }
-            return; // 生成图片后，结束本次对话流
-        }
-
-
         if (flow === 'news') {
             if (text.includes('新鲜事')) {
                 systemInstruction += `\n${character.newsTopic.subTopics['新鲜事']}`;
@@ -146,9 +107,11 @@ async function* sendMessageStream(
             systemInstruction += `\n\n**请你基于以下外部参考资料，与用户展开对话**:\n${externalContext}`;
         }
         
-        const apiMessages = convertToApiMessages(history, systemInstruction, text, imageBase64);
+        const apiMessages = convertToApiMessages(history, systemInstruction, finalPrompt, imageBase64);
         
-        const response = await chatModel.generateContentStream({ contents: apiMessages });
+        const response = await chatModel.generateContentStream({
+            contents: apiMessages,
+        });
         
         for await (const chunk of response.stream) {
             const textDelta = chunk.text();
@@ -172,7 +135,7 @@ async function* sendMessageStream(
     }
 }
 
-// === 辅助函数 (代码无变化) ===
+// === 辅助函数 ===
 const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: Flow): string => {
     let instruction = `你是${character.persona.name}，${character.persona.description}
     你的语言和行为必须严格遵守以下规则：
@@ -218,7 +181,7 @@ const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: F
 const convertToApiMessages = (history: Message[], systemInstruction: string, text: string, imageBase64: string | null) => {
     const apiMessages: any[] = [{ role: 'system', parts: [{ text: systemInstruction }] }];
     history.forEach(msg => {
-        const role = msg.sender === 'user' ? 'user' : 'model';
+        const role = msg.sender === 'user' ? 'user' : 'model'; // Gemini API uses 'model' for assistant
         const parts: any[] = [];
         if (msg.text) { parts.push({ text: msg.text }); }
         if (msg.imageBase64 && msg.imageMimeType) {
@@ -238,7 +201,7 @@ const convertToApiMessages = (history: Message[], systemInstruction: string, tex
         currentUserParts.push({
             inlineData: {
                 data: imageBase64,
-                mimeType: 'image/jpeg',
+                mimeType: 'image/jpeg', // 假设 MIME 类型
             },
         });
     }
@@ -247,78 +210,40 @@ const convertToApiMessages = (history: Message[], systemInstruction: string, tex
 };
 
 
-// === Vercel API 路由处理器 (代码无变化) ===
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-    if (req.method !== 'POST') {
-        res.setHeader('Allow', ['POST']);
-        return res.status(405).end(`Method ${req.method} Not Allowed`);
-    }
+// Vercel/Next.js 会将这个文件映射到 /api/chat 路由
 
-    if (!API_KEY) {
-        return res.status(500).json({ error: 'GEMINI_API_KEY environment variable is not configured.' });
-    }
+export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelResponse) => {
+  const { text, imageBase64, history, intimacy, userName, currentFlow } = req.body;
 
-    try {
-        const {
-            text,
-            imageBase64,
-            history,
-            intimacy,
-            userName,
-            currentFlow
-        } = req.body;
+  if (!text && !imageBase64) {
+    return res.status(400).json({ error: 'Text or image is required' });
+  }
 
-        if (!text && !imageBase64) {
-            return res.status(400).json({ error: 'Text or image is required' });
-        }
-        
-        const triageResult = await runTriage(text, userName, intimacy);
-        
-        let finalFlow: Flow = currentFlow;
+  const triageResult = await runTriage(text, userName, intimacy);
+  let finalFlow: Flow = currentFlow;
 
-        if (triageResult.action !== 'CONTINUE_CHAT') {
-            finalFlow = triageResult.action;
-        } else if (text.toLowerCase().includes('闲聊') || text.toLowerCase().includes('随便聊聊')) {
-            finalFlow = 'chat';
-        }
+  if (triageResult.action !== 'CONTINUE_CHAT') {
+    finalFlow = triageResult.action;
+  } else if (text.toLowerCase().includes('闲聊') || text.toLowerCase().includes('随便聊聊')) {
+    finalFlow = 'chat';
+  }
 
-        res.writeHead(200, {
-            'Content-Type': 'text/plain; charset=utf-8',
-            'Transfer-Encoding': 'chunked',
-            'Cache-Control': 'no-cache',
-        });
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Transfer-Encoding': 'chunked',
+    'Cache-Control': 'no-cache',
+  });
 
-        if (finalFlow === 'daily' && triageResult.action === 'daily') {
-            const staticResponse = handleDaoistDailyChoice(text);
-            res.write(JSON.stringify({ text: staticResponse, isLoading: false, flow: 'daily' }) + '\n');
-            res.end();
-            return;
-        }
+  if (finalFlow === 'daily' && triageResult.action === 'daily') {
+    const staticResponse = handleDaoistDailyChoice(text);
+    res.write(JSON.stringify({ text: staticResponse, isLoading: false, flow: 'daily' }) + '\n');
+    res.end();
+    return;
+  }
 
-        for await (const chunk of sendMessageStream(
-            text,
-            imageBase64,
-            history,
-            intimacy,
-            userName,
-            finalFlow
-        )) {
-            res.write(JSON.stringify({...chunk, flow: finalFlow}) + '\n');
-        }
+  for await (const chunk of sendMessageStream(text, imageBase64, history, intimacy, userName, finalFlow)) {
+    res.write(JSON.stringify({ ...chunk, flow: finalFlow }) + '\n');
+  }
 
-        res.end();
-
-    } catch (error) {
-        console.error('API handler error:', error);
-        if (!res.writableEnded) {
-            res.status(500).json({ error: '后端服务处理失败' });
-        }
-    }
-}
-
-
-
-
-
-
-
+  res.end();
+});
