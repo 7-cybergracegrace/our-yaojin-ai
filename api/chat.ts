@@ -1,46 +1,47 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-// --- FIX 1: Replaced path aliases with relative paths ---
+// 路径更新：使用相对路径从项目根目录的其他文件夹导入
 import * as character from '../core/characterSheet';
 import { handleDaoistDailyChoice } from '../services/daoistDailyService';
 import { Message, IntimacyLevel, Flow } from '../types';
-import { fetchWeiboNewsLogic } from './getWeiboNews';
-import { fetchDoubanMoviesLogic } from './douban-movie';
 
-// Get API key from environment variables
+// --- 关键改动(1/2): 更新导入路径 ---
+// 导入不再指向 api 目录下的文件，而是直接指向新建的 lib 目录
+import { fetchWeiboNewsLogic } from '../lib/weibo';
+import { fetchDoubanMoviesLogic } from '../lib/douban';
+
+
+// 获取环境变量中的API密钥
 const API_KEY = process.env.GEMINI_API_KEY;
 
-// Ensure API_KEY exists to avoid cold start failures
+// 确保 API_KEY 在调用时存在，避免服务冷启动失败
 const genAI = new GoogleGenerativeAI(API_KEY || '');
 
-// === Backend Models ===
-const chatModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-const triageModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+// === 后端函数：AI模型和外部数据获取 ===
+const chatModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const triageModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-// === FIX 2: Replaced internal fetch calls with direct function imports for efficiency ===
-// This avoids unnecessary network requests to your own server.
+// --- 关键改动(2/2): 更新函数调用 ---
+// 移除不必要的内部 fetch，直接调用导入的逻辑函数，更高效、更稳定
 async function getWeiboNews(): Promise<any[] | null> {
     try {
-        // Directly call the imported logic function
         return await fetchWeiboNewsLogic();
     } catch (error) {
-        console.error("Failed to get Weibo news:", error);
+        console.error("获取微博新闻失败:", error);
         return null;
     }
 }
 
 async function getDoubanMovies(): Promise<any[] | null> {
     try {
-        // Directly call the imported logic function
         return await fetchDoubanMoviesLogic();
     } catch (error) {
-        console.error("Failed to get movie info:", error);
+        console.error("获取电影信息失败:", error);
         return null;
     }
 }
 
-
-// === Intent Triage Function ===
+// === 意图分流函数 ===
 async function runTriage(userInput: string, userName: string, intimacy: IntimacyLevel): Promise<{ action: 'CONTINUE_CHAT' | 'guidance' | 'game' | 'news' | 'daily' }> {
     const triagePrompt = `
     # 指令
@@ -68,7 +69,7 @@ async function runTriage(userInput: string, userName: string, intimacy: Intimacy
     }
 }
 
-// === Core Chat Logic ===
+// === 核心对话逻辑 ===
 async function* sendMessageStream(
     text: string,
     imageBase64: string | null,
@@ -134,9 +135,8 @@ async function* sendMessageStream(
     }
 }
 
-// Helper function to build the system instruction
+// === 辅助函数 ===
 const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: Flow): string => {
-    // This function's logic remains the same
     let instruction = `你是${character.persona.name}，${character.persona.description}
     你的语言和行为必须严格遵守以下规则：
     - 核心人设: ${character.persona.description}
@@ -148,6 +148,7 @@ const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: F
     - 特殊能力指令: 你可以通过输出特定格式的文本来调用特殊能力: ${character.persona.specialAbilities.join(', ')}。
     - 图片处理: 当用户发送图片时，你需要能识别、评论图片内容。
     `;
+
     instruction += "\n\n---";
     switch (flow) {
         case 'guidance':
@@ -177,11 +178,10 @@ const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: F
     return instruction;
 };
 
-// Helper function to format messages for the Gemini API
 const convertToApiMessages = (history: Message[], systemInstruction: string, text: string, imageBase64: string | null) => {
     const apiMessages: any[] = [{ role: 'system', parts: [{ text: systemInstruction }] }];
-    for (const msg of history) {
-        const role = msg.sender === 'user' ? 'user' : 'assistant';
+    history.forEach(msg => {
+        const role = msg.sender === 'user' ? 'user' : 'model'; // Gemini API uses 'model' for assistant
         const parts: any[] = [];
         if (msg.text) { parts.push({ text: msg.text }); }
         if (msg.imageBase64 && msg.imageMimeType) {
@@ -193,23 +193,24 @@ const convertToApiMessages = (history: Message[], systemInstruction: string, tex
             });
         }
         if (parts.length > 0) { apiMessages.push({ role, parts }); }
-    }
+    });
+
     const currentUserParts: any[] = [];
     if (text) { currentUserParts.push({ text }); }
     if (imageBase64) {
         currentUserParts.push({
             inlineData: {
                 data: imageBase64,
-                mimeType: 'image/jpeg', // Assuming jpeg, adjust if needed
+                mimeType: 'image/jpeg', // 假设 MIME 类型
             },
         });
     }
     apiMessages.push({ role: 'user', parts: currentUserParts });
-    return apiMessages;
+    return apiMessages.map(msg => ({ role: msg.role, parts: msg.parts }));
 };
 
 
-// The main Vercel Serverless Function handler
+// Vercel/Next.js 会将这个文件映射到 /api/chat 路由
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', ['POST']);
@@ -221,7 +222,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-        const { text, imageBase64, history, intimacy, userName, currentFlow } = req.body;
+        const {
+            text,
+            imageBase64,
+            history,
+            intimacy,
+            userName,
+            currentFlow
+        } = req.body;
 
         if (!text && !imageBase64) {
             return res.status(400).json({ error: 'Text or image is required' });
@@ -238,30 +246,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         res.writeHead(200, {
-            'Content-Type': 'text/plain',
+            'Content-Type': 'text/plain; charset=utf-8',
             'Transfer-Encoding': 'chunked',
+            'Cache-Control': 'no-cache',
         });
 
         if (finalFlow === 'daily' && triageResult.action === 'daily') {
             const staticResponse = handleDaoistDailyChoice(text);
-            res.write(JSON.stringify({ text: staticResponse, isLoading: false }) + '\n');
+            res.write(JSON.stringify({ text: staticResponse, isLoading: false, flow: 'daily' }) + '\n');
             res.end();
             return;
         }
 
-        for await (const chunk of sendMessageStream(text, imageBase64, history, intimacy, userName, finalFlow)) {
-            res.write(JSON.stringify(chunk) + '\n');
+        for await (const chunk of sendMessageStream(
+            text,
+            imageBase64,
+            history,
+            intimacy,
+            userName,
+            finalFlow
+        )) {
+            res.write(JSON.stringify({...chunk, flow: finalFlow}) + '\n');
         }
 
         res.end();
 
     } catch (error) {
         console.error('API handler error:', error);
-        if (res.writableEnded) {
-            console.error("Response already sent, cannot send error.");
-            return;
+        if (!res.writableEnded) {
+            res.status(500).json({ error: '后端服务处理失败' });
         }
-        res.status(500).json({ error: '后端服务处理失败' });
     }
 }
+
+
 

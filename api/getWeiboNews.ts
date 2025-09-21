@@ -1,54 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+// 从新的 lib 目录导入核心逻辑
+import { fetchWeiboNewsLogic } from '../lib/weibo';
 
-// Safely read the Cookie from environment variables
-const WEIBO_COOKIE = process.env.WEIBO_COOKIE;
-
-// Use the API address you specified
-const WEIBO_API_URL = 'https://m.weibo.cn/api/container/getIndex?containerid=106003type%3D25%26t%3D3%26disable_hot%3D1%26filter_type%3Drealtimehot';
-
+// 这个文件现在只作为 API 路由的入口
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
-  // Check if the Cookie has been configured
-  if (!WEIBO_COOKIE) {
-    return res.status(500).json({ error: 'Backend service has not configured Weibo Cookie' });
-  }
-
-  try {
-    const response = await fetch(WEIBO_API_URL, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Version/108.0.0.0 Safari/537.36',
-        'Cookie': WEIBO_COOKIE,
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Request to official Weibo API failed: ${response.status}`);
+    try {
+        // 直接调用导入的逻辑函数
+        const finalTrends = await fetchWeiboNewsLogic();
+        res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=300');
+        res.status(200).json(finalTrends);
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '未知错误';
+        console.error(`后端服务(/weibo)出错: ${errorMessage}`);
+        res.status(500).json({ error: `后端服务出错: ${errorMessage}` });
     }
-    
-    // Return JSON data
-    const data = await response.json();
-
-    // Parse the complex JSON structure returned by the API address you provided
-    const cardGroup = data?.data?.cards?.[0]?.card_group;
-    if (!Array.isArray(cardGroup)) {
-      console.error('Abnormal data structure returned from Weibo API or Cookie is invalid:', data);
-      throw new Error('Abnormal data structure returned from Weibo API or Cookie is invalid');
-    }
-
-    const finalTrends = cardGroup
-      .filter((item: any) => item.desc)
-      .slice(0, 10)
-      .map((item: any) => ({
-        title: item.desc,
-        url: `https://m.s.weibo.com/weibo?q=${encodeURIComponent(`#${item.desc}#`)}`
-      }));
-    
-    // Set caching headers. This caches the content on the CDN for 10 minutes.
-    res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=300');
-    res.status(200).json(finalTrends);
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`Backend service (/weibo) error: ${errorMessage}`);
-    res.status(500).json({ error: `Backend service error: ${errorMessage}` });
-  }
 }
