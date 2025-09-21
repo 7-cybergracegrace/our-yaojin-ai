@@ -15,8 +15,8 @@ const API_KEY = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(API_KEY || '');
 
 // === 后端函数：AI模型和外部数据获取 ===
-const chatModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-const triageModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const chatModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const triageModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
 // 直接调用导入的逻辑函数
 async function getWeiboNews(): Promise<any[] | null> {
