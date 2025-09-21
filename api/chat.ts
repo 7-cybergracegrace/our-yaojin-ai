@@ -9,7 +9,7 @@ import { Message, IntimacyLevel, Flow } from '../types';
 // 导入不再指向 api 目录下的文件，而是直接指向新建的 lib 目录
 import { fetchWeiboNewsLogic } from '../lib/weibo';
 import { fetchDoubanMoviesLogic } from '../lib/douban';
-
+import { withApiHandler } from '../lib/apiHandler';
 
 // 获取环境变量中的API密钥
 const API_KEY = process.env.GEMINI_API_KEY;
