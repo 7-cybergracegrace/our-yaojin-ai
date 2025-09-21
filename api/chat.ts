@@ -15,13 +15,16 @@ import { withApiHandler } from '../lib/apiHandler.js';
 // 获取环境变量中的API密钥
 const API_KEY = process.env.GEMINI_API_KEY;
 
-// 确保 API_KEY 在调用时存在，避免服务冷启动失败
-const genAI = new GoogleGenerativeAI(API_KEY || '');
+// 确保 API_KEY 在调用时存在
+if (!API_KEY) {
+    throw new Error('GEMINI_API_KEY environment variable is not configured.');
+}
+const genAI = new GoogleGenerativeAI(API_KEY);
 
-// === 后端函数：AI模型和外部数据获取 ===
+// === 后端函数：AI模型定义 ===
 const chatModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 const triageModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-const imageGenerationModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-preview-image-generation' }); 
+const imageGenerationModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-preview-image-generation' });
 
 // 直接调用导入的逻辑函数
 async function getWeiboNews(): Promise<any[] | null> {
@@ -70,7 +73,7 @@ async function runTriage(userInput: string, userName: string, intimacy: Intimacy
     }
 }
 
-// === 核心对话逻辑 (代码无变化) ===
+// === 核心对话逻辑 ===
 async function* sendMessageStream(
     text: string,
     imageBase64: string | null,
@@ -83,6 +86,30 @@ async function* sendMessageStream(
         let systemInstruction = getSystemInstruction(intimacy, userName, flow);
         let externalContext: string | null = null;
         let finalPrompt = text;
+
+        // --- 核心改动：集成文生图逻辑 ---
+        if (flow === 'game' && text.toLowerCase().includes('画')) {
+             yield { text: "收到，本道仙这就为你挥毫泼墨...", isLoading: true };
+
+             const imagePrompt = `大师级的奇幻数字艺术，充满细节，描绘一个场景：${text.replace(/画/g, '')}`;
+
+             const result = await imageGenerationModel.generateContent(imagePrompt);
+             const response = await result.response;
+             
+             // 从API响应中解析出base64图片数据
+             const generatedImageBase64 = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+             if (generatedImageBase64) {
+                // 成功生成图片
+                yield { text: "本道仙的大作，你看如何？", generatedImageBase64, isLoading: false };
+             } else {
+                // 生成失败
+                yield { text: "哎呀，今日灵感枯竭，没画出来。换个描述试试？", isLoading: false };
+             }
+             // 结束生成器，不再执行后续的文本聊天逻辑
+             return;
+        }
+
 
         if (flow === 'news') {
             if (text.includes('新鲜事')) {
@@ -216,7 +243,6 @@ export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelRe
     const { text, imageBase64, history, intimacy, userName, currentFlow } = req.body;
 
     if (!text && !imageBase64) {
-        // --- 修复 2: 不要 return res.json()，而是发送响应后直接 return ---
         res.status(400).json({ error: 'Text or image is required' });
         return;
     }
@@ -231,8 +257,6 @@ export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelRe
     }
 
     res.writeHead(200, {
-        // --- 优化：流式响应通常是 text/plain 或 application/octet-stream，然后由前端解析每一行 ---
-        // 但如果前端能处理逐行的JSON，'application/json' 也可以
         'Content-Type': 'text/plain; charset=utf-8',
         'Transfer-Encoding': 'chunked',
         'Cache-Control': 'no-cache',
