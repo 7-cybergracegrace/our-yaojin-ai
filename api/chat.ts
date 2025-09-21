@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 // --- 核心修复：确保所有本地模块的导入都包含 .js 后缀 ---
 import * as character from '../core/characterSheet.js';
 import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
@@ -11,14 +11,28 @@ import { fetchDoubanMoviesLogic } from '../lib/douban.js';
 // 获取环境变量中的API密钥
 const API_KEY = process.env.GEMINI_API_KEY;
 
-// 确保 API_KEY 在调用时存在，避免服务冷启动失败
-const genAI = new GoogleGenerativeAI(API_KEY || '');
+// 在启动时检查API密钥，如果不存在则抛出错误
+if (!API_KEY) {
+    throw new Error('GEMINI_API_KEY environment variable not found.');
+}
 
-// === 后端函数：AI模型和外部数据获取 ===
-const chatModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-const triageModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const genAI = new GoogleGenerativeAI(API_KEY);
 
-// 直接调用导入的逻辑函数
+// === 模型定义 (已更新) ===
+const modelConfig = {
+    safetySettings: [
+        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+    ],
+};
+
+const chatModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', ...modelConfig });
+const triageModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', ...modelConfig });
+// --- 修改：根据您的要求，初始化指定的文生图模型 ---
+const imageModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-preview-image-generation', ...modelConfig });
+
+
+// === 外部数据获取函数 ===
 async function getWeiboNews(): Promise<any[] | null> {
     try {
         return await fetchWeiboNewsLogic();
@@ -37,7 +51,7 @@ async function getDoubanMovies(): Promise<any[] | null> {
     }
 }
 
-// === 意图分流函数 (代码无变化) ===
+// === 意图分流函数 ===
 async function runTriage(userInput: string, userName: string, intimacy: IntimacyLevel): Promise<{ action: 'CONTINUE_CHAT' | 'guidance' | 'game' | 'news' | 'daily' }> {
     const triagePrompt = `
     # 指令
@@ -65,7 +79,7 @@ async function runTriage(userInput: string, userName: string, intimacy: Intimacy
     }
 }
 
-// === 核心对话逻辑 (代码无变化) ===
+// === 核心对话逻辑 (已更新) ===
 async function* sendMessageStream(
     text: string,
     imageBase64: string | null,
@@ -77,8 +91,37 @@ async function* sendMessageStream(
     try {
         let systemInstruction = getSystemInstruction(intimacy, userName, flow);
         let externalContext: string | null = null;
-        let finalPrompt = text;
         
+        // --- 核心修改：更新“你说我画”的游戏逻辑 ---
+        const isDrawingRequest = flow === 'game' && (text.includes('画一') || text.includes('画个') || text.includes('生成'));
+        if (isDrawingRequest) {
+            systemInstruction += `\n${character.gameRules.games['你说我画']}`;
+            yield { text: "好嘞，看本道仙为你挥毫泼墨，稍等片刻...", isLoading: true };
+
+            const imagePrompt = text; // 直接使用用户的输入作为图片生成的提示
+
+            // --- 使用您指定的 gemini-2.0-flash-preview-image-generation 模型进行文生图 ---
+            const result = await imageModel.generateContent(imagePrompt);
+            const response = await result.response;
+            
+            // 从响应中找到图片数据
+            const imagePart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+
+            if (imagePart && imagePart.inlineData) {
+                const base64Data = imagePart.inlineData.data;
+                // 返回包含图片的最终消息
+                yield { 
+                    text: "大功告成！你看如何？", 
+                    generatedImageBase64: base64Data, 
+                    isLoading: false 
+                };
+            } else {
+                 yield { text: "哎呀，今日灵感枯竭，画不出来了...换个东西画吧？", isLoading: false };
+            }
+            return; // 生成图片后，结束本次对话流
+        }
+
+
         if (flow === 'news') {
             if (text.includes('新鲜事')) {
                 systemInstruction += `\n${character.newsTopic.subTopics['新鲜事']}`;
@@ -103,11 +146,9 @@ async function* sendMessageStream(
             systemInstruction += `\n\n**请你基于以下外部参考资料，与用户展开对话**:\n${externalContext}`;
         }
         
-        const apiMessages = convertToApiMessages(history, systemInstruction, finalPrompt, imageBase64);
+        const apiMessages = convertToApiMessages(history, systemInstruction, text, imageBase64);
         
-        const response = await chatModel.generateContentStream({
-            contents: apiMessages,
-        });
+        const response = await chatModel.generateContentStream({ contents: apiMessages });
         
         for await (const chunk of response.stream) {
             const textDelta = chunk.text();
@@ -177,7 +218,7 @@ const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: F
 const convertToApiMessages = (history: Message[], systemInstruction: string, text: string, imageBase64: string | null) => {
     const apiMessages: any[] = [{ role: 'system', parts: [{ text: systemInstruction }] }];
     history.forEach(msg => {
-        const role = msg.sender === 'user' ? 'user' : 'model'; // Gemini API uses 'model' for assistant
+        const role = msg.sender === 'user' ? 'user' : 'model';
         const parts: any[] = [];
         if (msg.text) { parts.push({ text: msg.text }); }
         if (msg.imageBase64 && msg.imageMimeType) {
@@ -197,7 +238,7 @@ const convertToApiMessages = (history: Message[], systemInstruction: string, tex
         currentUserParts.push({
             inlineData: {
                 data: imageBase64,
-                mimeType: 'image/jpeg', // 假设 MIME 类型
+                mimeType: 'image/jpeg',
             },
         });
     }
@@ -206,7 +247,7 @@ const convertToApiMessages = (history: Message[], systemInstruction: string, tex
 };
 
 
-// Vercel/Next.js 会将这个文件映射到 /api/chat 路由 (代码无变化)
+// === Vercel API 路由处理器 (代码无变化) ===
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', ['POST']);
@@ -274,6 +315,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
     }
 }
+
+
 
 
 
