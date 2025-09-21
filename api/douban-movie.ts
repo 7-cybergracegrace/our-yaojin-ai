@@ -1,11 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-// 1. 从 lib 目录导入核心逻辑
-import { fetchDoubanMoviesLogic } from '../lib/douban';
+// 核心修复：在导入路径的末尾添加 .js 后缀
+import { fetchDoubanMoviesLogic } from '../lib/douban.js';
 
-// 2. 这个文件现在只负责处理请求和响应
+// 这个文件现在只负责处理请求和响应
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
     try {
-        // 3. 直接调用核心逻辑
+        // 直接调用核心逻辑
         const top10Movies = await fetchDoubanMoviesLogic();
         res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=600');
         res.status(200).json(top10Movies);
