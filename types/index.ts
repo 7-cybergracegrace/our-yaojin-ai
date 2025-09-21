@@ -1,21 +1,34 @@
-// 定义聊天记录中单条消息的结构
+// types/index.ts
+
 export interface Message {
-    sender: 'user' | 'assistant';
+    id: string;
+    sender: 'user' | 'bot' | 'notification';
     text: string;
-    imageBase64?: string | null;
-    imageMimeType?: string | null;
+    image?: string;
+    imageBase64?: string;
+    imageMimeType?: string;
     isLoading?: boolean;
-    errorType?: 'rate_limit' | 'safety' | 'server' | 'unknown' | null;
-    flow?: Flow; // 用于追踪该消息属于哪个对话流程
+    quickReplies?: string[];
+    intimacy?: IntimacyLevel;
+    notificationContent?: string;
+    errorType?: 'rate_limit' | 'safety' | 'server' | 'unknown';
+    // --- 核心修复：在这里添加新的属性 ---
+    generatedImageBase64?: string; 
 }
 
-// 定义用户与AI之间的亲密度等级结构
 export interface IntimacyLevel {
-    level: number;      // 例如: 1, 2, 3...
-    name: string;       // 例如: "初识", "知己"
-    progress: number;   // 例如: 75 (代表 75%)
+    level: number;
+    name: string;
+    min: number;
+    progress: number;
 }
 
-// 定义所有可能的对话流程或模式
-export type Flow = 'chat' | 'guidance' | 'game' | 'news' | 'daily';
+export interface User {
+    username: string;
+    email: string;
+    isGuest?: boolean;
+}
+
+export type Flow = 'default' | 'chat' | 'guidance' | 'game' | 'news' | 'daily';
+
 
