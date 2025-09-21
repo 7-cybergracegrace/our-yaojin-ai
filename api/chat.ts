@@ -1,28 +1,28 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-// 使用新的别名导入，@/ 代表项目根目录
-import * as character from '@/core/characterSheet';
-import { handleDaoistDailyChoice } from '@/services/daoistDailyService';
-// 确保 types 文件也通过 @/ 别名导入
-import { Message, IntimacyLevel, Flow } from '@/types';
+// --- FIX 1: Replaced path aliases with relative paths ---
+import * as character from '../core/characterSheet';
+import { handleDaoistDailyChoice } from '../services/daoistDailyService';
+import { Message, IntimacyLevel, Flow } from '../types';
+import { fetchWeiboNewsLogic } from './getWeiboNews';
+import { fetchDoubanMoviesLogic } from './douban-movie';
 
-
-// 获取环境变量中的API密钥
+// Get API key from environment variables
 const API_KEY = process.env.GEMINI_API_KEY;
 
-// 确保 API_KEY 在调用时存在，避免服务冷启动失败
+// Ensure API_KEY exists to avoid cold start failures
 const genAI = new GoogleGenerativeAI(API_KEY || '');
 
-// === 后端函数：AI模型和外部数据获取 ===
+// === Backend Models ===
 const chatModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 const triageModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-// 内部函数：直接调用其他 API 路由的逻辑，避免外部 fetch
+// === FIX 2: Replaced internal fetch calls with direct function imports for efficiency ===
+// This avoids unnecessary network requests to your own server.
 async function getWeiboNews(): Promise<any[] | null> {
     try {
-        const response = await fetch('https://your-domain.com/api/getWeiboNews');
-        if (!response.ok) throw new Error('Failed to fetch Weibo news from backend API');
-        return await response.json();
+        // Directly call the imported logic function
+        return await fetchWeiboNewsLogic();
     } catch (error) {
         console.error("Failed to get Weibo news:", error);
         return null;
@@ -31,16 +31,16 @@ async function getWeiboNews(): Promise<any[] | null> {
 
 async function getDoubanMovies(): Promise<any[] | null> {
     try {
-        const response = await fetch('https://your-domain.com/api/douban-movie');
-        if (!response.ok) throw new Error('Failed to fetch Douban movie info from backend API');
-        return await response.json();
+        // Directly call the imported logic function
+        return await fetchDoubanMoviesLogic();
     } catch (error) {
         console.error("Failed to get movie info:", error);
         return null;
     }
 }
 
-// === 新增：意图分流函数 ===
+
+// === Intent Triage Function ===
 async function runTriage(userInput: string, userName: string, intimacy: IntimacyLevel): Promise<{ action: 'CONTINUE_CHAT' | 'guidance' | 'game' | 'news' | 'daily' }> {
     const triagePrompt = `
     # 指令
@@ -68,7 +68,7 @@ async function runTriage(userInput: string, userName: string, intimacy: Intimacy
     }
 }
 
-// === 核心对话逻辑 ===
+// === Core Chat Logic ===
 async function* sendMessageStream(
     text: string,
     imageBase64: string | null,
@@ -94,7 +94,7 @@ async function* sendMessageStream(
                 systemInstruction += `\n${character.newsTopic.subTopics['上映新片']}`;
                 const movieData = await getDoubanMovies();
                 if (movieData && movieData.length > 0) {
-                    const formattedMovies = movieData.map((movie, index) => `[${index + 1}] 《${movie.title}》- 评分: ${movie.score} (链接: ${movie.url})`).join('\n');
+                    const formattedMovies = movieData.map((movie, index) => `[${index + 1}] 《${movie.title}》- 评分: ${movie.score}`).join('\n');
                     externalContext = `本道仙刚瞅了一眼，最近上映的电影倒是有点意思，这几部你看过吗？\n\n${formattedMovies}`;
                 }
             } else if (text.includes('小道仙的幻想')) {
@@ -134,7 +134,9 @@ async function* sendMessageStream(
     }
 }
 
+// Helper function to build the system instruction
 const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: Flow): string => {
+    // This function's logic remains the same
     let instruction = `你是${character.persona.name}，${character.persona.description}
     你的语言和行为必须严格遵守以下规则：
     - 核心人设: ${character.persona.description}
@@ -146,7 +148,6 @@ const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: F
     - 特殊能力指令: 你可以通过输出特定格式的文本来调用特殊能力: ${character.persona.specialAbilities.join(', ')}。
     - 图片处理: 当用户发送图片时，你需要能识别、评论图片内容。
     `;
-
     instruction += "\n\n---";
     switch (flow) {
         case 'guidance':
@@ -176,6 +177,7 @@ const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: F
     return instruction;
 };
 
+// Helper function to format messages for the Gemini API
 const convertToApiMessages = (history: Message[], systemInstruction: string, text: string, imageBase64: string | null) => {
     const apiMessages: any[] = [{ role: 'system', parts: [{ text: systemInstruction }] }];
     for (const msg of history) {
@@ -195,18 +197,19 @@ const convertToApiMessages = (history: Message[], systemInstruction: string, tex
     const currentUserParts: any[] = [];
     if (text) { currentUserParts.push({ text }); }
     if (imageBase64) {
-      currentUserParts.push({
-        inlineData: {
-          data: imageBase64,
-          mimeType: 'image/jpeg',
-        },
-      });
+        currentUserParts.push({
+            inlineData: {
+                data: imageBase64,
+                mimeType: 'image/jpeg', // Assuming jpeg, adjust if needed
+            },
+        });
     }
     apiMessages.push({ role: 'user', parts: currentUserParts });
     return apiMessages;
 };
 
-// Vercel/Next.js 会将这个文件映射到 /api/chat 路由
+
+// The main Vercel Serverless Function handler
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', ['POST']);
@@ -218,14 +221,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-        const {
-            text, // Removed userId, as it's not used in this function
-            imageBase64,
-            history,
-            intimacy,
-            userName,
-            currentFlow
-        } = req.body;
+        const { text, imageBase64, history, intimacy, userName, currentFlow } = req.body;
 
         if (!text && !imageBase64) {
             return res.status(400).json({ error: 'Text or image is required' });
@@ -253,14 +249,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return;
         }
 
-        for await (const chunk of sendMessageStream(
-            text,
-            imageBase64,
-            history,
-            intimacy,
-            userName,
-            finalFlow
-        )) {
+        for await (const chunk of sendMessageStream(text, imageBase64, history, intimacy, userName, finalFlow)) {
             res.write(JSON.stringify(chunk) + '\n');
         }
 
