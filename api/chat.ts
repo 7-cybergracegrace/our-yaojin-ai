@@ -1,51 +1,52 @@
 // api/chat.ts
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-// --- 修复 1: 为所有本地模块导入添加 .js 扩展名 ---
-import * as character from '../core/characterSheet.js';
 import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
 import { Message, IntimacyLevel, Flow } from '../types/index.js';
 import { fetchWeiboNewsLogic } from '../lib/weibo.js';
 import { fetchDoubanMoviesLogic } from '../lib/douban.js';
 import { withApiHandler } from '../lib/apiHandler.js';
+import * as character from '../core/characterSheet.js';
 
+// --- 配置：使用环境变量获取中转站 API Key 和 URL ---
+const API_URL = 'https://api.bltcy.ai';
+const API_KEY = process.env.BLTCY_API_KEY;
 
-// 获取环境变量中的API密钥
-const API_KEY = process.env.GEMINI_API_KEY;
-
-// 确保 API_KEY 在调用时存在
+// 确保 API Key 已配置
 if (!API_KEY) {
-    throw new Error('GEMINI_API_KEY environment variable is not configured.');
+    throw new Error('BLTCY_API_KEY environment variable is not configured.');
 }
-const genAI = new GoogleGenerativeAI(API_KEY);
 
-// === 后端函数：AI模型定义 ===
-const chatModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-const triageModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-const imageGenerationModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-preview-image-generation' });
+// --- 封装通用的 API 调用函数 ---
+async function streamApiCall(
+    path: string,
+    payload: any
+): Promise<Response> {
+    const response = await fetch(`${API_URL}${path}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${API_KEY}`,
+            'Accept': 'application/json',
+            'User-Agent': 'DMXAPI/1.0.0 (https://api.bltcy.ai)'
+        },
+        body: JSON.stringify(payload),
+    });
 
-// 直接调用导入的逻辑函数
-async function getWeiboNews(): Promise<any[] | null> {
-    try {
-        return await fetchWeiboNewsLogic();
-    } catch (error) {
-        console.error("获取微博新闻失败:", error);
-        return null;
+    if (!response.ok) {
+        let errorData = await response.text();
+        try {
+            errorData = JSON.parse(errorData).error.message;
+        } catch (e) {
+            // ignore
+        }
+        throw new Error(`API request failed with status ${response.status}: ${errorData}`);
     }
+
+    return response;
 }
 
-async function getDoubanMovies(): Promise<any[] | null> {
-    try {
-        return await fetchDoubanMoviesLogic();
-    } catch (error) {
-        console.error("获取电影信息失败:", error);
-        return null;
-    }
-}
-
-// === 意图分流函数 (代码无变化) ===
+// --- 意图分流函数 ---
 async function runTriage(userInput: string, userName: string, intimacy: IntimacyLevel): Promise<{ action: 'CONTINUE_CHAT' | 'guidance' | 'game' | 'news' | 'daily' }> {
     const triagePrompt = `
     # 指令
@@ -62,18 +63,28 @@ async function runTriage(userInput: string, userName: string, intimacy: Intimacy
     # 你的输出 (必须是以下JSON对象之一):
     `;
 
-    const result = await triageModel.generateContent(triagePrompt);
-    const responseText = result.response.text().trim();
-
     try {
-        const triageAction = JSON.parse(responseText);
-        return triageAction;
+        const response = await streamApiCall('/v1/chat/completions', {
+            model: 'gemini-2.5-flash', 
+            messages: [{ role: 'user', content: triagePrompt }],
+            stream: false, 
+        });
+        
+        const result = await response.json();
+        const responseText = result.choices?.[0]?.message?.content?.trim();
+
+        if (responseText) {
+            const triageAction = JSON.parse(responseText);
+            return triageAction;
+        }
     } catch (e) {
-        return { action: 'CONTINUE_CHAT' };
+        console.error("意图分流失败:", e);
     }
+    
+    return { action: 'CONTINUE_CHAT' };
 }
 
-// === 核心对话逻辑 ===
+// --- 核心对话逻辑：将 Gemini 调用替换为中转站 API 调用 ---
 async function* sendMessageStream(
     text: string,
     imageBase64: string | null,
@@ -87,41 +98,43 @@ async function* sendMessageStream(
         let externalContext: string | null = null;
         let finalPrompt = text;
 
-        // --- 核心改动：集成文生图逻辑 ---
         if (flow === 'game' && text.toLowerCase().includes('画')) {
-             yield { text: "收到，本道仙这就为你挥毫泼墨...", isLoading: true };
+            yield { text: "收到，本道仙这就为你挥毫挥毫...", isLoading: true };
+            const imagePrompt = `大师级的奇幻数字艺术，充满细节，描绘一个场景：${text.replace(/画/g, '')}`;
+            
+            try {
+                const response = await streamApiCall('/v1/images/generations', {
+                    model: "gemini-2.0-flash-preview-image-generation",
+                    prompt: imagePrompt,
+                    n: 1,
+                    size: "1024x1024"
+                });
+                const result = await response.json();
+                const generatedImageUrl = result.data?.[0]?.url;
 
-             const imagePrompt = `大师级的奇幻数字艺术，充满细节，描绘一个场景：${text.replace(/画/g, '')}`;
-
-             const result = await imageGenerationModel.generateContent(imagePrompt);
-             const response = await result.response;
-             
-             // 从API响应中解析出base64图片数据
-             const generatedImageBase64 = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-
-             if (generatedImageBase64) {
-                // 成功生成图片
-                yield { text: "本道仙的大作，你看如何？", generatedImageBase64, isLoading: false };
-             } else {
-                // 生成失败
-                yield { text: "哎呀，今日灵感枯竭，没画出来。换个描述试试？", isLoading: false };
-             }
-             // 结束生成器，不再执行后续的文本聊天逻辑
-             return;
+                if (generatedImageUrl) {
+                    yield { text: "本道仙的大作，你看如何？", generatedImageUrl, isLoading: false };
+                } else {
+                    yield { text: "哎呀，今日灵感枯竭，没画出来。换个描述试试？", isLoading: false };
+                }
+            } catch (imageError) {
+                console.error("图片生成 API 失败:", imageError);
+                yield { text: "图片生成失败，可能是网络或API问题。请稍后重试。", isLoading: false };
+            }
+            return;
         }
-
 
         if (flow === 'news') {
             if (text.includes('新鲜事')) {
                 systemInstruction += `\n${character.newsTopic.subTopics['新鲜事']}`;
-                const newsData = await getWeiboNews();
+                const newsData = await fetchWeiboNewsLogic();
                 if (newsData && newsData.length > 0) {
                     const formattedTrends = newsData.map((item, index) => `[${index + 1}] ${item.title}`).join('\n');
                     externalContext = `以下是微博热搜榜的新鲜事：\n\n${formattedTrends}`;
                 }
             } else if (text.includes('上映新片')) {
                 systemInstruction += `\n${character.newsTopic.subTopics['上映新片']}`;
-                const movieData = await getDoubanMovies();
+                const movieData = await fetchDoubanMoviesLogic();
                 if (movieData && movieData.length > 0) {
                     const formattedMovies = movieData.map((movie, index) => `[${index + 1}] 《${movie.title}》- 评分: ${movie.score}`).join('\n');
                     externalContext = `本道仙刚瞅了一眼，最近上映的电影倒是有点意思，这几部你看过吗？\n\n${formattedMovies}`;
@@ -137,14 +150,39 @@ async function* sendMessageStream(
 
         const apiMessages = convertToApiMessages(history, systemInstruction, finalPrompt, imageBase64);
 
-        const response = await chatModel.generateContentStream({
-            contents: apiMessages,
+        const response = await streamApiCall('/v1/chat/completions', {
+            model: 'gemini-2.5-flash', 
+            messages: apiMessages,
+            stream: true,
         });
 
-        for await (const chunk of response.stream) {
-            const textDelta = chunk.text();
-            if (textDelta) {
-                yield { text: textDelta, isLoading: true };
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (line.trim()) {
+                    try {
+                        const cleanedLine = line.startsWith('data: ') ? line.substring(6) : line;
+                        if (cleanedLine === '[DONE]') break;
+
+                        const chunk = JSON.parse(cleanedLine);
+                        const textDelta = chunk.choices?.[0]?.delta?.content;
+                        if (textDelta) {
+                            yield { text: textDelta, isLoading: true };
+                        }
+                    } catch (e) {
+                        console.error("Failed to parse stream chunk:", line);
+                    }
+                }
             }
         }
 
@@ -163,7 +201,7 @@ async function* sendMessageStream(
     }
 }
 
-// === 辅助函数 (代码无变化) ===
+// === 辅助函数 (保持不变) ===
 const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: Flow): string => {
     let instruction = `你是${character.persona.name}，${character.persona.description}
     你的语言和行为必须严格遵守以下规则：
@@ -237,8 +275,24 @@ const convertToApiMessages = (history: Message[], systemInstruction: string, tex
     return apiMessages.map(msg => ({ role: msg.role, parts: msg.parts }));
 };
 
+async function getWeiboNews(): Promise<any[] | null> {
+    try {
+        return await fetchWeiboNewsLogic();
+    } catch (error) {
+        console.error("获取微博新闻失败:", error);
+        return null;
+    }
+}
+async function getDoubanMovies(): Promise<any[] | null> {
+    try {
+        return await fetchDoubanMoviesLogic();
+    } catch (error) {
+        console.error("获取电影信息失败:", error);
+        return null;
+    }
+}
 
-// Vercel/Next.js 会将这个文件映射到 /api/chat 路由
+// Vercel/Next.js 路由处理器
 export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelResponse) => {
     const { text, imageBase64, history, intimacy, userName, currentFlow } = req.body;
 
