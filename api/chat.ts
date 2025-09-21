@@ -1,15 +1,16 @@
+// api/chat.ts
+
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-// 路径更新：使用相对路径从项目根目录的其他文件夹导入
-import * as character from '../core/characterSheet';
-import { handleDaoistDailyChoice } from '../services/daoistDailyService';
-import { Message, IntimacyLevel, Flow } from '../types';
 
-// --- 关键改动(1/2): 更新导入路径 ---
-// 导入不再指向 api 目录下的文件，而是直接指向新建的 lib 目录
-import { fetchWeiboNewsLogic } from '../lib/weibo';
-import { fetchDoubanMoviesLogic } from '../lib/douban';
-import { withApiHandler } from '../lib/apiHandler';
+// --- 修复 1: 为所有本地模块导入添加 .js 扩展名 ---
+import * as character from '../core/characterSheet.js';
+import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
+import { Message, IntimacyLevel, Flow } from '../types/index.js';
+import { fetchWeiboNewsLogic } from '../lib/weibo.js';
+import { fetchDoubanMoviesLogic } from '../lib/douban.js';
+import { withApiHandler } from '../lib/apiHandler.js';
+
 
 // 获取环境变量中的API密钥
 const API_KEY = process.env.GEMINI_API_KEY;
@@ -18,11 +19,11 @@ const API_KEY = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(API_KEY || '');
 
 // === 后端函数：AI模型和外部数据获取 ===
-const chatModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-const triageModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const chatModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const triageModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const imageGenerationModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-preview-image-generation' }); 
 
-// --- 关键改动(2/2): 更新函数调用 ---
-// 移除不必要的内部 fetch，直接调用导入的逻辑函数，更高效、更稳定
+// 直接调用导入的逻辑函数
 async function getWeiboNews(): Promise<any[] | null> {
     try {
         return await fetchWeiboNewsLogic();
@@ -41,7 +42,7 @@ async function getDoubanMovies(): Promise<any[] | null> {
     }
 }
 
-// === 意图分流函数 ===
+// === 意图分流函数 (代码无变化) ===
 async function runTriage(userInput: string, userName: string, intimacy: IntimacyLevel): Promise<{ action: 'CONTINUE_CHAT' | 'guidance' | 'game' | 'news' | 'daily' }> {
     const triagePrompt = `
     # 指令
@@ -57,10 +58,10 @@ async function runTriage(userInput: string, userName: string, intimacy: Intimacy
     "${userInput}"
     # 你的输出 (必须是以下JSON对象之一):
     `;
-    
+
     const result = await triageModel.generateContent(triagePrompt);
     const responseText = result.response.text().trim();
-    
+
     try {
         const triageAction = JSON.parse(responseText);
         return triageAction;
@@ -69,7 +70,7 @@ async function runTriage(userInput: string, userName: string, intimacy: Intimacy
     }
 }
 
-// === 核心对话逻辑 ===
+// === 核心对话逻辑 (代码无变化) ===
 async function* sendMessageStream(
     text: string,
     imageBase64: string | null,
@@ -82,7 +83,7 @@ async function* sendMessageStream(
         let systemInstruction = getSystemInstruction(intimacy, userName, flow);
         let externalContext: string | null = null;
         let finalPrompt = text;
-        
+
         if (flow === 'news') {
             if (text.includes('新鲜事')) {
                 systemInstruction += `\n${character.newsTopic.subTopics['新鲜事']}`;
@@ -102,24 +103,24 @@ async function* sendMessageStream(
                 systemInstruction += `\n${character.newsTopic.subTopics['小道仙的幻想']}`;
             }
         }
-        
+
         if (externalContext) {
             systemInstruction += `\n\n**请你基于以下外部参考资料，与用户展开对话**:\n${externalContext}`;
         }
-        
+
         const apiMessages = convertToApiMessages(history, systemInstruction, finalPrompt, imageBase64);
-        
+
         const response = await chatModel.generateContentStream({
             contents: apiMessages,
         });
-        
+
         for await (const chunk of response.stream) {
             const textDelta = chunk.text();
             if (textDelta) {
                 yield { text: textDelta, isLoading: true };
             }
         }
-        
+
         yield { isLoading: false };
     } catch (error) {
         console.error("API error:", error);
@@ -135,7 +136,7 @@ async function* sendMessageStream(
     }
 }
 
-// === 辅助函数 ===
+// === 辅助函数 (代码无变化) ===
 const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: Flow): string => {
     let instruction = `你是${character.persona.name}，${character.persona.description}
     你的语言和行为必须严格遵守以下规则：
@@ -181,7 +182,7 @@ const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: F
 const convertToApiMessages = (history: Message[], systemInstruction: string, text: string, imageBase64: string | null) => {
     const apiMessages: any[] = [{ role: 'system', parts: [{ text: systemInstruction }] }];
     history.forEach(msg => {
-        const role = msg.sender === 'user' ? 'user' : 'model'; // Gemini API uses 'model' for assistant
+        const role = msg.sender === 'user' ? 'user' : 'model';
         const parts: any[] = [];
         if (msg.text) { parts.push({ text: msg.text }); }
         if (msg.imageBase64 && msg.imageMimeType) {
@@ -201,7 +202,7 @@ const convertToApiMessages = (history: Message[], systemInstruction: string, tex
         currentUserParts.push({
             inlineData: {
                 data: imageBase64,
-                mimeType: 'image/jpeg', // 假设 MIME 类型
+                mimeType: 'image/jpeg',
             },
         });
     }
@@ -211,39 +212,42 @@ const convertToApiMessages = (history: Message[], systemInstruction: string, tex
 
 
 // Vercel/Next.js 会将这个文件映射到 /api/chat 路由
-
 export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelResponse) => {
-  const { text, imageBase64, history, intimacy, userName, currentFlow } = req.body;
+    const { text, imageBase64, history, intimacy, userName, currentFlow } = req.body;
 
-  if (!text && !imageBase64) {
-    return res.status(400).json({ error: 'Text or image is required' });
-  }
+    if (!text && !imageBase64) {
+        // --- 修复 2: 不要 return res.json()，而是发送响应后直接 return ---
+        res.status(400).json({ error: 'Text or image is required' });
+        return;
+    }
 
-  const triageResult = await runTriage(text, userName, intimacy);
-  let finalFlow: Flow = currentFlow;
+    const triageResult = await runTriage(text, userName, intimacy);
+    let finalFlow: Flow = currentFlow;
 
-  if (triageResult.action !== 'CONTINUE_CHAT') {
-    finalFlow = triageResult.action;
-  } else if (text.toLowerCase().includes('闲聊') || text.toLowerCase().includes('随便聊聊')) {
-    finalFlow = 'chat';
-  }
+    if (triageResult.action !== 'CONTINUE_CHAT') {
+        finalFlow = triageResult.action;
+    } else if (text.toLowerCase().includes('闲聊') || text.toLowerCase().includes('随便聊聊')) {
+        finalFlow = 'chat';
+    }
 
-  res.writeHead(200, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Transfer-Encoding': 'chunked',
-    'Cache-Control': 'no-cache',
-  });
+    res.writeHead(200, {
+        // --- 优化：流式响应通常是 text/plain 或 application/octet-stream，然后由前端解析每一行 ---
+        // 但如果前端能处理逐行的JSON，'application/json' 也可以
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Transfer-Encoding': 'chunked',
+        'Cache-Control': 'no-cache',
+    });
 
-  if (finalFlow === 'daily' && triageResult.action === 'daily') {
-    const staticResponse = handleDaoistDailyChoice(text);
-    res.write(JSON.stringify({ text: staticResponse, isLoading: false, flow: 'daily' }) + '\n');
+    if (finalFlow === 'daily' && triageResult.action === 'daily') {
+        const staticResponse = handleDaoistDailyChoice(text);
+        res.write(JSON.stringify({ text: staticResponse, isLoading: false, flow: 'daily' }) + '\n');
+        res.end();
+        return;
+    }
+
+    for await (const chunk of sendMessageStream(text, imageBase64, history, intimacy, userName, finalFlow)) {
+        res.write(JSON.stringify({ ...chunk, flow: finalFlow }) + '\n');
+    }
+
     res.end();
-    return;
-  }
-
-  for await (const chunk of sendMessageStream(text, imageBase64, history, intimacy, userName, finalFlow)) {
-    res.write(JSON.stringify({ ...chunk, flow: finalFlow }) + '\n');
-  }
-
-  res.end();
 });
