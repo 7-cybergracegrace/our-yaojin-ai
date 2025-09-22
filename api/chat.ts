@@ -47,7 +47,7 @@ async function streamApiCall(
 async function runTriage(userInput: string, userName: string, intimacy: IntimacyLevel): Promise<{ action: 'CONTINUE_CHAT' | 'guidance' | 'game' | 'news' | 'daily' }> {
     const triagePrompt = `
     # 指令
-    你是一个对话分流助手。你的任务是根据用户的输入，严格匹配以下七种情况中的一种，并仅输出与该情况对应的JSON对象。不要添加任何额外的解释或文字。
+    你是一个对话分流助手。你的任务是根据用户的输入，严格匹配以下七种情况中的一种，并仅输出与该情况对应的JSON对象。不要添加任何额外的解释[...]
     # 当前用户信息
     - 昵称: ${userName}
     - 亲密度: ${intimacy.level}
@@ -70,7 +70,9 @@ async function runTriage(userInput: string, userName: string, intimacy: Intimacy
         const responseText = result.choices?.[0]?.message?.content?.trim();
 
         if (responseText) {
-            const triageAction = JSON.parse(responseText);
+            // --- PATCH: Remove code block markers before parsing ---
+            const cleaned = responseText.replace(/^\s*```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1').trim();
+            const triageAction = JSON.parse(cleaned);
             return triageAction;
         }
     } catch (e) {
@@ -206,11 +208,11 @@ const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: F
     instruction += "\n\n---";
     switch (flow) {
         case 'guidance':
-            instruction += `\n**当前模式：仙人指路**\n用户正在向你寻求指引。你必须严格遵循以下JSON中定义的“三步对话模式”来与用户互动。绝不能跳过任何步骤，也不能一次性回答所有问题。
+            instruction += `\n**当前模式：仙人指路**\n用户正在向你寻求指引。你必须严格遵循以下JSON中定义的“三步对话模式”来与用户互动。绝不能跳过�[...]
             \`\`\`json
             ${JSON.stringify(character.guidanceFlows, null, 2)}
             \`\`\`
-            流程：1. 根据用户意图，从'message'字段中选择并仅回复对应话术索取信息。 2. 收到信息后，回复对应的'ACKNOWLEDGE_INFO'话术作为过渡。 3. 最后，根据用户的输入，遵循'generation_rules'生成并交付最终结果，结果必须用 \`[DIVINATION]{...}\` 格式包裹。`;
+            流程：1. 根据用户意图，从'message'字段中选择并仅回复对应话术索取信息。 2. 收到信息后，回复对应的'ACKNOWLEDGE_INFO'话术作为过渡。 3. 最后，[...]
             break;
         case 'game':
             instruction += `\n**当前模式：游戏小摊**\n${character.gameRules.introduction}
