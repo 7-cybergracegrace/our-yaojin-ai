@@ -1,11 +1,9 @@
-// api/chat.ts
-
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { withApiHandler } from '../lib/apiHandler.js';
 import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
 import { Message, IntimacyLevel, Flow } from '../types/index.js';
 import { fetchWeiboNewsLogic } from '../lib/weibo.js';
 import { fetchDoubanMoviesLogic } from '../lib/douban.js';
-import { withApiHandler } from '../lib/apiHandler.js';
 import * as character from '../core/characterSheet.js';
 
 // --- 配置：使用环境变量获取中转站 API Key 和 URL ---
@@ -36,13 +34,12 @@ async function streamApiCall(
     if (!response.ok) {
         let errorData = await response.text();
         try {
-            errorData = JSON.parse(errorData).error.message;
+            errorData = JSON.parse(errorData).error?.message || errorData;
         } catch (e) {
             // ignore
         }
         throw new Error(`API request failed with status ${response.status}: ${errorData}`);
     }
-
     return response;
 }
 
@@ -69,7 +66,6 @@ async function runTriage(userInput: string, userName: string, intimacy: Intimacy
             messages: [{ role: 'user', content: triagePrompt }],
             stream: false, 
         });
-        
         const result = await response.json();
         const responseText = result.choices?.[0]?.message?.content?.trim();
 
@@ -80,11 +76,10 @@ async function runTriage(userInput: string, userName: string, intimacy: Intimacy
     } catch (e) {
         console.error("意图分流失败:", e);
     }
-    
     return { action: 'CONTINUE_CHAT' };
 }
 
-// --- 核心对话逻辑：将 Gemini 调用替换为中转站 API 调用 ---
+// --- 核心对话逻辑 ---
 async function* sendMessageStream(
     text: string,
     imageBase64: string | null,
@@ -147,9 +142,7 @@ async function* sendMessageStream(
         if (externalContext) {
             systemInstruction += `\n\n**请你基于以下外部参考资料，与用户展开对话**:\n${externalContext}`;
         }
-
         const apiMessages = convertToApiMessages(history, systemInstruction, finalPrompt, imageBase64);
-
         const response = await streamApiCall('/v1/chat/completions', {
             model: 'gemini-2.5-flash', 
             messages: apiMessages,
@@ -163,17 +156,14 @@ async function* sendMessageStream(
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
-
             for (const line of lines) {
                 if (line.trim()) {
                     try {
                         const cleanedLine = line.startsWith('data: ') ? line.substring(6) : line;
                         if (cleanedLine === '[DONE]') break;
-
                         const chunk = JSON.parse(cleanedLine);
                         const textDelta = chunk.choices?.[0]?.delta?.content;
                         if (textDelta) {
@@ -185,7 +175,6 @@ async function* sendMessageStream(
                 }
             }
         }
-
         yield { isLoading: false };
     } catch (error) {
         console.error("API error:", error);
@@ -214,7 +203,6 @@ const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: F
     - 特殊能力指令: 你可以通过输出特定格式的文本来调用特殊能力: ${character.persona.specialAbilities.join(', ')}。
     - 图片处理: 当用户发送图片时，你需要能识别、评论图片内容。
     `;
-
     instruction += "\n\n---";
     switch (flow) {
         case 'guidance':
@@ -275,57 +263,51 @@ const convertToApiMessages = (history: Message[], systemInstruction: string, tex
     return apiMessages.map(msg => ({ role: msg.role, parts: msg.parts }));
 };
 
-async function getWeiboNews(): Promise<any[] | null> {
+const getWeiboNews = async (): Promise<any[] | null> => {
     try {
         return await fetchWeiboNewsLogic();
     } catch (error) {
         console.error("获取微博新闻失败:", error);
         return null;
     }
-}
-async function getDoubanMovies(): Promise<any[] | null> {
+};
+
+const getDoubanMovies = async (): Promise<any[] | null> => {
     try {
         return await fetchDoubanMoviesLogic();
     } catch (error) {
         console.error("获取电影信息失败:", error);
         return null;
     }
-}
+};
 
 // Vercel/Next.js 路由处理器
 export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelResponse) => {
     const { text, imageBase64, history, intimacy, userName, currentFlow } = req.body;
-
     if (!text && !imageBase64) {
         res.status(400).json({ error: 'Text or image is required' });
         return;
     }
-
     const triageResult = await runTriage(text, userName, intimacy);
     let finalFlow: Flow = currentFlow;
-
     if (triageResult.action !== 'CONTINUE_CHAT') {
         finalFlow = triageResult.action;
     } else if (text.toLowerCase().includes('闲聊') || text.toLowerCase().includes('随便聊聊')) {
         finalFlow = 'chat';
     }
-
     res.writeHead(200, {
         'Content-Type': 'text/plain; charset=utf-8',
         'Transfer-Encoding': 'chunked',
         'Cache-Control': 'no-cache',
     });
-
     if (finalFlow === 'daily' && triageResult.action === 'daily') {
         const staticResponse = handleDaoistDailyChoice(text);
         res.write(JSON.stringify({ text: staticResponse, isLoading: false, flow: 'daily' }) + '\n');
         res.end();
         return;
     }
-
     for await (const chunk of sendMessageStream(text, imageBase64, history, intimacy, userName, finalFlow)) {
         res.write(JSON.stringify({ ...chunk, flow: finalFlow }) + '\n');
     }
-
     res.end();
 });
