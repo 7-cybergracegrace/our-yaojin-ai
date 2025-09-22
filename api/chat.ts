@@ -47,7 +47,7 @@ async function streamApiCall(
 async function runTriage(userInput: string, userName: string, intimacy: IntimacyLevel): Promise<{ action: 'CONTINUE_CHAT' | 'guidance' | 'game' | 'news' | 'daily' }> {
     const triagePrompt = `
     # 指令
-    你是一个对话分流助手。你的任务是根据用户的输入，严格匹配以下七种情况中的一种，并仅输出与该情况对应的JSON对象。不要添加任何额外的解释[...]
+    你是一个对话分流助手。你的任务是根据用户的输入，严格匹配以下七种情况中的一种，并仅输出与该情况对应的JSON对象。不要添加任何额外的解释和代码块。
     # 当前用户信息
     - 昵称: ${userName}
     - 亲密度: ${intimacy.level}
@@ -195,31 +195,32 @@ async function* sendMessageStream(
 // === 辅助函数 (保持不变) ===
 const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: Flow): string => {
     let instruction = `你是${character.persona.name}，${character.persona.description}
-    你的语言和行为必须严格遵守以下规则：
-    - 核心人设: ${character.persona.description}
-    - 亲密度规则: ${character.persona.intimacyRules}
-    - 当前用户信息:
-      - 用户昵称：${userName}
-      - 你们的亲密度等级：${intimacy.level} (${intimacy.name})
-      - 亲密度进度：${intimacy.progress}%
-    - 特殊能力指令: 你可以通过输出特定格式的文本来调用特殊能力: ${character.persona.specialAbilities.join(', ')}。
-    - 图片处理: 当用户发送图片时，你需要能识别、评论图片内容。
-    `;
+你的语言和行为必须严格遵守以下规则：
+- 核心人设: ${character.persona.description}
+- 亲密度规则: ${character.persona.intimacyRules}
+- 当前用户信息:
+  - 用户昵称：${userName}
+  - 你们的亲密度等级：${intimacy.level} (${intimacy.name})
+  - 亲密度进度：${intimacy.progress}%
+- 特殊能力指令: 你可以通过输出特定格式的文本来调用特殊能力: ${character.persona.specialAbilities.join(', ')}。
+- 图片处理: 当用户发送图片时，你需要能识别、评论图片内容。
+`;
+
     instruction += "\n\n---";
     switch (flow) {
         case 'guidance':
-            instruction += `\n**当前模式：仙人指路**\n用户正在向你寻求指引。你必须严格遵循以下JSON中定义的“三步对话模式”来与用户互动。绝不能跳过�[...]
-            \`\`\`json
-            ${JSON.stringify(character.guidanceFlows, null, 2)}
-            \`\`\`
-            流程：1. 根据用户意图，从'message'字段中选择并仅回复对应话术索取信息。 2. 收到信息后，回复对应的'ACKNOWLEDGE_INFO'话术作为过渡。 3. 最后，[...]
+            instruction += `\n**当前模式：仙人指路**\n用户正在向你寻求指引。你必须严格遵循以下JSON中定义的“三步对话模式”来与用户互动。绝不能跳过任何步骤。
+\`\`\`json
+${JSON.stringify(character.guidanceFlows, null, 2)}
+\`\`\`
+流程：1. 根据用户意图，从'message'字段中选择并仅回复对应话术索取信息。 2. 收到信息后，回复对应的'ACKNOWLEDGE_INFO'话术作为过渡。 3. 最后，回复'FINAL_RESPONSE'话术完成指引。`;
             break;
         case 'game':
             instruction += `\n**当前模式：游戏小摊**\n${character.gameRules.introduction}
-            ### 游戏规则文档 ###
-            **你说我画:** ${character.gameRules.games['你说我画']}
-            **故事接龙:** ${character.gameRules.games['故事接龙']}
-            **真心话大冒险:** ${character.gameRules.games['真心话大冒险']}`;
+### 游戏规则文档 ###
+**你说我画:** ${character.gameRules.games['你说我画']}
+**故事接龙:** ${character.gameRules.games['故事接龙']}
+**真心话大冒险:** ${character.gameRules.games['真心话大冒险']}`;
             break;
         case 'news':
             instruction += `\n**当前模式：俗世趣闻**\n${character.newsTopic.introduction}`;
