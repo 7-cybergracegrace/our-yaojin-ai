@@ -49,6 +49,7 @@ const App: React.FC = () => {
     const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
     const [intimacyProgress, setIntimacyProgress] = useState(0);
     const [activeFlow, setActiveFlow] = useState<Flow>('default');
+    const [currentStep, setCurrentStep] = useState(0); // 新增：跟踪当前步骤
 
     const chatEndRef = useRef<HTMLDivElement>(null);
     const currentIntimacy = getIntimacyFromProgress(intimacyProgress);
@@ -202,6 +203,7 @@ const App: React.FC = () => {
                     intimacy: currentIntimacy,
                     userName,
                     currentFlow: activeFlow,
+                    currentStep: currentStep // 新增：将当前步骤发送到后端
                 }),
             });
 
@@ -211,15 +213,13 @@ const App: React.FC = () => {
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let accumulatedText = ''; // New variable to accumulate text
+            let accumulatedText = '';
             
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 
-                // Decode the chunk and parse it as a JSON object
                 const chunkString = decoder.decode(value, { stream: true });
-                // Handle multiple JSON objects in one chunk
                 const lines = chunkString.split('\n');
                 
                 for (const line of lines) {
@@ -227,7 +227,6 @@ const App: React.FC = () => {
                         try {
                             const chunk = JSON.parse(line);
                             
-                            // Accumulate the text from the 'text' field
                             if (chunk.text) {
                                 accumulatedText += chunk.text;
                             }
@@ -240,7 +239,6 @@ const App: React.FC = () => {
                                     newMessages[lastBotMessageIndex] = {
                                         ...newMessages[lastBotMessageIndex],
                                         text: accumulatedText,
-                                        // Update other fields as needed
                                         isLoading: chunk.isLoading !== undefined ? chunk.isLoading : newMessages[lastBotMessageIndex].isLoading,
                                         generatedImageUrl: chunk.generatedImageUrl || newMessages[lastBotMessageIndex].generatedImageUrl,
                                         quickReplies: chunk.quickReplies || newMessages[lastBotMessageIndex].quickReplies,
@@ -254,13 +252,11 @@ const App: React.FC = () => {
                             }
                         } catch (e) {
                              console.error('Error parsing JSON line from stream:', line, e);
-                             // Handle unparseable lines, for example, by re-adding to a buffer for next loop
                         }
                     }
                 }
             }
 
-            // Final update after the loop finishes
             setMessages(prev => {
                 const newMessages = [...prev];
                 const lastBotMessageIndex = newMessages.findIndex(m => m.id === botMessage.id);
@@ -269,8 +265,11 @@ const App: React.FC = () => {
                 }
                 return newMessages;
             });
-
+            
             setIntimacyProgress(prev => Math.min(prev + Math.floor(Math.random() * 3) + 1, 100));
+
+            // 更新步骤状态
+            setCurrentStep(prev => prev + 1);
             
         } catch (error) {
             console.error('Error sending message:', error);
@@ -291,17 +290,17 @@ const App: React.FC = () => {
                 setIsCooldown(false);
             }, cooldownDuration);
         }
-    }, [messages, isLoading, isCooldown, currentUser, intimacyProgress, userName, cooldownDuration, activeFlow]);
+    }, [messages, isLoading, isCooldown, currentUser, intimacyProgress, userName, cooldownDuration, activeFlow, currentStep]);
     
     const handlePromptClick = (intro: { text: string; replies: string[] }, flowId: Flow) => {
         setActiveFlow(flowId);
+        setCurrentStep(1); // 将步骤重置为1，开始新流程
         const botMessage: Message = {
             id: `bot-flow-start-${Date.now()}`,
             sender: 'bot',
             text: intro.text,
             quickReplies: intro.replies,
         };
-        // Start a temporary conversation for the flow
         setMessages([botMessage]);
     };
 
@@ -316,7 +315,6 @@ const App: React.FC = () => {
     };
 
     const handleConfirmNewConversation = () => {
-        // Load history to reset to the main conversation thread
         if(currentUser) {
             const userScope = currentUser.isGuest ? '_GUEST' : `_${currentUser.email}`;
             const savedMessages = localStorage.getItem(`chatHistory_YaoJin${userScope}`);
@@ -325,6 +323,7 @@ const App: React.FC = () => {
              setMessages([INITIAL_MESSAGE]);
         }
         setActiveFlow('default');
+        setCurrentStep(0); // 重置步骤
         setIsNewConversationModalOpen(false);
     };
 
@@ -339,6 +338,7 @@ const App: React.FC = () => {
         setIntimacyProgress(0);
         setUserAvatar(DEFAULT_USER_AVATAR);
         setActiveFlow('default');
+        setCurrentStep(0); // 重置步骤
         if(currentUser?.isGuest) {
             setCurrentUser(null);
         }
@@ -375,8 +375,6 @@ const App: React.FC = () => {
                 onClearHistory={handleClearHistory}
                 onNewConversation={handleNewConversation}
                 currentUser={currentUser}
-                userAvatar={userAvatar}
-                onAvatarChangeClick={() => setIsAvatarModalOpen(true)}
                 onLoginClick={() => setIsAuthModalOpen(true)}
                 onLogout={handleLogout}
             />
