@@ -60,20 +60,18 @@ const handleShoppingTopic = (): string => {
 };
 
 // 使用一个映射表来代替 if/else 链
+// 关键修改：直接在键上添加省略号
 const dailyTopicHandlers: { [key: string]: () => string } = {
-    "最近看了": handleBookOrMovieTopic,
-    "随便聊聊": handleRandomDailyTopic,
+    "最近看了...": handleBookOrMovieTopic,
+    "随便聊聊...": handleRandomDailyTopic,
     "我的记仇小本本": handleGrudgeTopic,
-    "最近买了": handleShoppingTopic,
+    "最近买了...": handleShoppingTopic,
 };
 
 // 导出主处理函数，它接收一个明确的“子意图”
 // `chat.ts` 里的 triageModel 会负责将用户的输入映射到这里的 key
 export const handleDaoistDailyChoice = (subTopic: string): string => {
-    // 在这里添加文本清理逻辑，确保子话题能正确匹配
-    const cleanedSubTopic = subTopic.replace(/[\u2026]/g, '').trim();
-    
-    const handler = dailyTopicHandlers[cleanedSubTopic];
+    const handler = dailyTopicHandlers[subTopic];
     if (handler) {
         return handler();
     }
