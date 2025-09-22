@@ -1,4 +1,4 @@
-// src/services/daoistDailyService.ts
+// 文件: src/services/daoistDailyService.ts
 
 // --- 知识库与数据设定 (Knowledge Base & Data) ---
 const daoistDailyData = {
@@ -70,7 +70,10 @@ const dailyTopicHandlers: { [key: string]: () => string } = {
 // 导出主处理函数，它接收一个明确的“子意图”
 // `chat.ts` 里的 triageModel 会负责将用户的输入映射到这里的 key
 export const handleDaoistDailyChoice = (subTopic: string): string => {
-    const handler = dailyTopicHandlers[subTopic];
+    // 在这里添加文本清理逻辑，确保子话题能正确匹配
+    const cleanedSubTopic = subTopic.replace(/[\u2026]/g, '').trim();
+    
+    const handler = dailyTopicHandlers[cleanedSubTopic];
     if (handler) {
         return handler();
     }
