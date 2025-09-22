@@ -6,16 +6,14 @@ import { fetchWeiboNewsLogic } from '../lib/weibo.js';
 import { fetchDoubanMoviesLogic } from '../lib/douban.js';
 import * as character from '../core/characterSheet.js';
 
-// --- 配置：使用环境变量获取中转站 API Key 和 URL ---
 const API_URL = 'https://api.bltcy.ai';
 const API_KEY = process.env.BLTCY_API_KEY;
 
-// 确保 API Key 已配置
 if (!API_KEY) {
     throw new Error('BLTCY_API_KEY environment variable is not configured.');
 }
 
-// --- 封装通用的 API 调用函数 ---
+// ----------- 修正后的流式API调用函数 -----------
 async function streamApiCall(
     path: string,
     payload: any
@@ -41,9 +39,7 @@ async function streamApiCall(
             let errorData = await response.text();
             try {
                 errorData = JSON.parse(errorData).error?.message || errorData;
-            } catch (e) {
-                // ignore
-            }
+            } catch (e) {}
             console.error(`[${new Date().toISOString()}] [streamApiCall] API请求失败 ${API_URL}${path} 状态码: ${response.status} 错误信息:`, errorData);
             throw new Error(`API request failed with status ${response.status}: ${errorData}`);
         }
@@ -54,7 +50,7 @@ async function streamApiCall(
     }
 }
 
-// --- 意图分流函数 ---
+// ----------- 修正后的意图分流函数 -----------
 async function runTriage(userInput: string, userName: string, intimacy: IntimacyLevel): Promise<{ action: 'CONTINUE_CHAT' | 'guidance' | 'game' | 'news' | 'daily' }> {
     console.log(`[${new Date().toISOString()}] [runTriage] 开始分流: userInput="${userInput}", userName="${userName}", intimacy=`, intimacy);
     const triagePrompt = `
@@ -76,7 +72,9 @@ ${JSON.stringify(character.triageRules, null, 2)}
         const start = Date.now();
         const response = await streamApiCall('/v1/chat/completions', {
             model: 'gemini-2.5-flash', 
-            messages: [{ role: 'user', content: triagePrompt }],
+            messages: [
+                { role: 'user', content: triagePrompt }
+            ],
             stream: false, 
         });
         const duration = Date.now() - start;
@@ -88,19 +86,8 @@ ${JSON.stringify(character.triageRules, null, 2)}
             // --- PATCH: Remove code block markers before parsing ---
             const cleaned = responseText.replace(/^\s*```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1').trim();
             const triageAction = JSON.parse(cleaned);
-
-            // 修正：如果 triageAction 是 { guidance: {...} }，则返回 { action: 'guidance' }
-            if (typeof triageAction === 'object' && triageAction !== null) {
-                const keys = Object.keys(triageAction);
-                if (
-                    keys.length === 1 &&
-                    ['CONTINUE_CHAT', 'guidance', 'game', 'news', 'daily', 'REJECT_AND_TERMINATE'].includes(keys[0])
-                ) {
-                    return { action: keys[0] === 'CONTINUE_CHAT' ? 'CONTINUE_CHAT' : keys[0] };
-                }
-            }
-            // fallback: 如果已经是 { action: ... } 格式直接返回
-            if (triageAction.action) return triageAction;
+            console.log(`[${new Date().toISOString()}] [runTriage] triage解析结果:`, triageAction);
+            return triageAction;
         }
     } catch (e) {
         console.error(`[${new Date().toISOString()}] [runTriage] 意图分流失败:`, e);
@@ -108,7 +95,7 @@ ${JSON.stringify(character.triageRules, null, 2)}
     return { action: 'CONTINUE_CHAT' };
 }
 
-// --- 核心对话逻辑 ---
+// ----------- 修正后的核心对话流函数（重构消息格式和流式chunk解析） -----------
 async function* sendMessageStream(
     text: string,
     imageBase64: string | null,
@@ -128,7 +115,6 @@ async function* sendMessageStream(
             console.log(`[${new Date().toISOString()}] [sendMessageStream] 游戏模式-画图触发`);
             yield { text: "收到，本道仙这就为你挥毫挥毫...", isLoading: true };
             const imagePrompt = `大师级的奇幻数字艺术，充满细节，描绘一个场景：${text.replace(/画/g, '')}`;
-            
             try {
                 const start = Date.now();
                 const response = await streamApiCall('/v1/images/generations', {
@@ -186,42 +172,62 @@ async function* sendMessageStream(
         if (externalContext) {
             systemInstruction += `\n\n**请你基于以下外部参考资料，与用户展开对话**:\n${externalContext}`;
         }
-        const apiMessages = convertToApiMessages(history, systemInstruction, finalPrompt, imageBase64);
+
+        // 只用 content 字段构造 messages
+        const apiMessages = [
+            { role: 'system', content: systemInstruction },
+            ...history.map(msg => ({
+                role: msg.sender === 'user' ? 'user' : 'assistant',
+                content: msg.text
+            })),
+            { role: 'user', content: finalPrompt }
+        ];
+
         console.log(`[${new Date().toISOString()}] [sendMessageStream] 开始chat流API调用, apiMessages=`, apiMessages);
+
         const start = Date.now();
         const response = await streamApiCall('/v1/chat/completions', {
-            model: 'gemini-2.5-flash', 
+            model: 'gemini-2.5-flash',
             messages: apiMessages,
             stream: true,
         });
         const duration = Date.now() - start;
         console.log(`[${new Date().toISOString()}] [sendMessageStream] chat流API响应, 耗时: ${duration}ms`);
 
+        // ----------- 修正后的流式chunk解析 -----------
         const reader = response.body!.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        const MAX_DURATION = 30000;
+        const startTime = Date.now();
 
         while (true) {
-            const readStart = Date.now();
+            if (Date.now() - startTime > MAX_DURATION) {
+                console.error('AI流式响应超时');
+                yield { text: 'AI接口响应超时，请稍后重试。', isLoading: false, errorType: 'server' };
+                break;
+            }
             const { done, value } = await reader.read();
-            const readDuration = Date.now() - readStart;
-            console.log(`[${new Date().toISOString()}] [sendMessageStream] 流读取: done=${done}, value长度=${value?.length}, 耗时=${readDuration}ms`);
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-            for (const line of lines) {
-                if (line.trim()) {
+            while (buffer.includes('\n')) {
+                let idx = buffer.indexOf('\n');
+                let line = buffer.slice(0, idx);
+                buffer = buffer.slice(idx + 1);
+                if (!line.trim()) continue;
+                if (line.startsWith('data: ')) {
+                    const dataLine = line.slice(6).trim();
+                    if (dataLine === '[DONE]') break;
                     try {
-                        const cleanedLine = line.startsWith('data: ') ? line.substring(6) : line;
-                        if (cleanedLine === '[DONE]') break;
-                        const chunk = JSON.parse(cleanedLine);
-                        const textDelta = chunk.choices?.[0]?.delta?.content;
+                        const data = JSON.parse(dataLine);
+                        const textDelta = data.choices?.[0]?.delta?.content || '';
                         if (textDelta) {
                             yield { text: textDelta, isLoading: true };
                         }
                     } catch (e) {
-                        console.error(`[${new Date().toISOString()}] [sendMessageStream] 流chunk解析失败:`, line);
+                        // 处理不完整JSON
+                        buffer = line + '\n' + buffer;
+                        break;
                     }
                 }
             }
@@ -241,7 +247,7 @@ async function* sendMessageStream(
     }
 }
 
-// === 辅助函数 (保持不变) ===
+// --- 系统指令生成 ---
 const getSystemInstruction = (intimacy: IntimacyLevel, userName: string, flow: Flow): string => {
     let instruction = `你是${character.persona.name}，${character.persona.description}
 你的语言和行为必须严格遵守以下规则：
@@ -292,66 +298,7 @@ ${JSON.stringify(character.guidanceFlows, null, 2)}
     return instruction;
 };
 
-const convertToApiMessages = (history: Message[], systemInstruction: string, text: string, imageBase64: string | null) => {
-    const apiMessages: any[] = [{ role: 'system', parts: [{ text: systemInstruction }] }];
-    history.forEach(msg => {
-        const role = msg.sender === 'user' ? 'user' : 'model';
-        const parts: any[] = [];
-        if (msg.text) { parts.push({ text: msg.text }); }
-        if (msg.imageBase64 && msg.imageMimeType) {
-            parts.push({
-                inlineData: {
-                    data: msg.imageBase64,
-                    mimeType: msg.imageMimeType
-                }
-            });
-        }
-        if (parts.length > 0) { apiMessages.push({ role, parts }); }
-    });
-
-    const currentUserParts: any[] = [];
-    if (text) { currentUserParts.push({ text }); }
-    if (imageBase64) {
-        currentUserParts.push({
-            inlineData: {
-                data: imageBase64,
-                mimeType: 'image/jpeg',
-            },
-        });
-    }
-    apiMessages.push({ role: 'user', parts: currentUserParts });
-    return apiMessages.map(msg => ({ role: msg.role, parts: msg.parts }));
-};
-
-const getWeiboNews = async (): Promise<any[] | null> => {
-    try {
-        console.log(`[${new Date().toISOString()}] [getWeiboNews] 开始获取微博新闻`);
-        const start = Date.now();
-        const data = await fetchWeiboNewsLogic();
-        const duration = Date.now() - start;
-        console.log(`[${new Date().toISOString()}] [getWeiboNews] 微博新闻获取完成，耗时: ${duration}ms, 数量: ${data?.length}`);
-        return data;
-    } catch (error) {
-        console.error(`[${new Date().toISOString()}] [getWeiboNews] 获取微博新闻失败:`, error);
-        return null;
-    }
-};
-
-const getDoubanMovies = async (): Promise<any[] | null> => {
-    try {
-        console.log(`[${new Date().toISOString()}] [getDoubanMovies] 开始获取豆瓣电影`);
-        const start = Date.now();
-        const data = await fetchDoubanMoviesLogic();
-        const duration = Date.now() - start;
-        console.log(`[${new Date().toISOString()}] [getDoubanMovies] 豆瓣电影获取完成，耗时: ${duration}ms, 数量: ${data?.length}`);
-        return data;
-    } catch (error) {
-        console.error(`[${new Date().toISOString()}] [getDoubanMovies] 获取电影信息失败:`, error);
-        return null;
-    }
-};
-
-// Vercel/Next.js 路由处理器
+// --- Vercel/Next.js 路由处理器 ---
 export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelResponse) => {
     const reqStart = Date.now();
     console.log(`[${new Date().toISOString()}] [API] 请求开始: body=`, req.body);
@@ -363,13 +310,11 @@ export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelRe
     }
     const triageResult = await runTriage(text, userName, intimacy);
     let finalFlow: Flow = currentFlow;
-    // 修正后的流程判断
-    if (triageResult.action && triageResult.action !== 'CONTINUE_CHAT') {
+    if (triageResult.action !== 'CONTINUE_CHAT') {
         finalFlow = triageResult.action;
     } else if (text.toLowerCase().includes('闲聊') || text.toLowerCase().includes('随便聊聊')) {
         finalFlow = 'chat';
     }
-    if (!finalFlow) finalFlow = 'default'; // 防止 undefined
     console.log(`[${new Date().toISOString()}] [API] 分流结果:`, triageResult, 'finalFlow:', finalFlow);
     res.writeHead(200, {
         'Content-Type': 'text/plain; charset=utf-8',
