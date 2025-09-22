@@ -88,8 +88,19 @@ ${JSON.stringify(character.triageRules, null, 2)}
             // --- PATCH: Remove code block markers before parsing ---
             const cleaned = responseText.replace(/^\s*```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1').trim();
             const triageAction = JSON.parse(cleaned);
-            console.log(`[${new Date().toISOString()}] [runTriage] triage解析结果:`, triageAction);
-            return triageAction;
+
+            // 修正：如果 triageAction 是 { guidance: {...} }，则返回 { action: 'guidance' }
+            if (typeof triageAction === 'object' && triageAction !== null) {
+                const keys = Object.keys(triageAction);
+                if (
+                    keys.length === 1 &&
+                    ['CONTINUE_CHAT', 'guidance', 'game', 'news', 'daily', 'REJECT_AND_TERMINATE'].includes(keys[0])
+                ) {
+                    return { action: keys[0] === 'CONTINUE_CHAT' ? 'CONTINUE_CHAT' : keys[0] };
+                }
+            }
+            // fallback: 如果已经是 { action: ... } 格式直接返回
+            if (triageAction.action) return triageAction;
         }
     } catch (e) {
         console.error(`[${new Date().toISOString()}] [runTriage] 意图分流失败:`, e);
@@ -352,11 +363,13 @@ export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelRe
     }
     const triageResult = await runTriage(text, userName, intimacy);
     let finalFlow: Flow = currentFlow;
-    if (triageResult.action !== 'CONTINUE_CHAT') {
+    // 修正后的流程判断
+    if (triageResult.action && triageResult.action !== 'CONTINUE_CHAT') {
         finalFlow = triageResult.action;
     } else if (text.toLowerCase().includes('闲聊') || text.toLowerCase().includes('随便聊聊')) {
         finalFlow = 'chat';
     }
+    if (!finalFlow) finalFlow = 'default'; // 防止 undefined
     console.log(`[${new Date().toISOString()}] [API] 分流结果:`, triageResult, 'finalFlow:', finalFlow);
     res.writeHead(200, {
         'Content-Type': 'text/plain; charset=utf-8',
