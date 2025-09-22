@@ -1,3 +1,4 @@
+// 文件: api/chat.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { withApiHandler } from '../lib/apiHandler.js';
 import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
@@ -317,6 +318,7 @@ const convertToApiMessages = (
     return apiMessages;
 };
 
+// Vercel/Next.js 路由处理器
 export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelResponse) => {
     const reqStart = Date.now();
     console.log(`[${new Date().toISOString()}] [API] 请求开始: body=`, req.body);
@@ -344,6 +346,8 @@ export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelRe
         'Cache-Control': 'no-cache',
     });
 
+    // --- 修复后的道仙日常逻辑 ---
+    // 当流程为'daily'时，根据用户的输入调用daoistDailyService中的函数
     if (finalFlow === 'daily' && currentStep > 0) {
         const staticResponse = handleDaoistDailyChoice(text);
         res.write(JSON.stringify({ text: staticResponse, isLoading: false, flow: 'daily' }) + '\n');
