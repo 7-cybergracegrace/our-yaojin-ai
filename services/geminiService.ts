@@ -3,7 +3,7 @@ import * as character from '../core/characterSheet.js';
 import { Message, IntimacyLevel, Flow } from '../types/index.js';
 import { getDaoistDailyIntro, handleDaoistDailyChoice } from './daoistDailyService.js';
 
-// --- 新增：用于调用 /api/chat 的函数 ---
+// --- 新增：用于调用 /api/chat 的函数 (通过后端代理) ---
 // 这个函数处理流式响应，需要一个回调函数 (onChunk) 来处理收到的每一段数据
 export async function streamChatResponse(
     payload: {
@@ -18,7 +18,7 @@ export async function streamChatResponse(
     onError: (error: Error) => void // 错误处理函数
 ) {
     try {
-        const response = await fetch('/api/chat', {
+        const response = await fetch('/api/chat', { // 注意：这里是你的后端代理路由
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -60,14 +60,14 @@ export async function streamChatResponse(
 }
 
 
-// --- 新增：用于调用 /api/gemini 的函数 ---
+// --- 新增：用于调用 /api/gemini 的函数 (通过后端代理) ---
 export async function streamGeminiResponse(
     prompt: string,
     onChunk: (chunk: { text?: string; error?: string }) => void,
     onError: (error: Error) => void
 ) {
     try {
-        const response = await fetch('/api/gemini', {
+        const response = await fetch('/api/gemini', { // 注意：这里是你的后端代理路由
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt }),
@@ -106,7 +106,7 @@ export async function streamGeminiResponse(
 }
 
 
-// 这个函数是前端处理文件逻辑，无需修改
+// --- 以下函数是前端处理文件逻辑，无需修改 ---
 export const fileToBase64 = async (file: File): Promise<string> => {
     return new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -119,7 +119,6 @@ export const fileToBase64 = async (file: File): Promise<string> => {
     });
 };
 
-// 已修复
 export async function getWeiboNewsFromBackend(): Promise<any[] | null> {
     try {
         const response = await fetch('/api/getWeiboNews', {
@@ -133,7 +132,6 @@ export async function getWeiboNewsFromBackend(): Promise<any[] | null> {
     }
 }
 
-// 已修复
 export async function getDoubanMoviesFromBackend(): Promise<any[] | null> {
     try {
         const response = await fetch('/api/douban-movie', {
