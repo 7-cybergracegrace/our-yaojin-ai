@@ -9,7 +9,6 @@ import NotificationMessage from './components/NotificationMessage';
 import ConfirmationModal from './components/ConfirmationModal';
 import AvatarSelectionModal from './components/AvatarSelectionModal';
 import { Message, IntimacyLevel, User, Flow } from './types';
-// 修正：从 services/geminiService 中导入 fileToBase64 函数
 import { fileToBase64 } from './services/geminiService';
 import { getCurrentUser, logout } from './services/authService';
 
@@ -212,45 +211,67 @@ const App: React.FC = () => {
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let accumulatedText = '';
-            let lastBotMessage: Message | null = null;
-            let rateLimitErrorOccurred = false;
+            let accumulatedText = ''; // New variable to accumulate text
             
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 
-                const chunk = JSON.parse(decoder.decode(value, { stream: true }));
+                // Decode the chunk and parse it as a JSON object
+                const chunkString = decoder.decode(value, { stream: true });
+                // Handle multiple JSON objects in one chunk
+                const lines = chunkString.split('\n');
                 
-                // Update based on the new backend stream format
-                lastBotMessage = { ...botMessage, ...chunk, isLoading: false };
-                
-                if (chunk.errorType === 'rate_limit') {
-                    rateLimitErrorOccurred = true;
-                }
-                
-                setMessages(prev => {
-                    const newMessages = [...prev];
-                    const lastMsgIndex = newMessages.findIndex(m => m.id === botMessage.id);
-                    if (lastMsgIndex !== -1) {
-                        newMessages[lastMsgIndex] = lastBotMessage as Message;
+                for (const line of lines) {
+                    if (line.trim()) {
+                        try {
+                            const chunk = JSON.parse(line);
+                            
+                            // Accumulate the text from the 'text' field
+                            if (chunk.text) {
+                                accumulatedText += chunk.text;
+                            }
+
+                            setMessages(prev => {
+                                const newMessages = [...prev];
+                                const lastBotMessageIndex = newMessages.findIndex(m => m.id === botMessage.id);
+                                
+                                if (lastBotMessageIndex !== -1) {
+                                    newMessages[lastBotMessageIndex] = {
+                                        ...newMessages[lastBotMessageIndex],
+                                        text: accumulatedText,
+                                        // Update other fields as needed
+                                        isLoading: chunk.isLoading !== undefined ? chunk.isLoading : newMessages[lastBotMessageIndex].isLoading,
+                                        generatedImageUrl: chunk.generatedImageUrl || newMessages[lastBotMessageIndex].generatedImageUrl,
+                                        quickReplies: chunk.quickReplies || newMessages[lastBotMessageIndex].quickReplies,
+                                    };
+                                }
+                                return newMessages;
+                            });
+
+                            if (chunk.isLoading === false) {
+                                break;
+                            }
+                        } catch (e) {
+                             console.error('Error parsing JSON line from stream:', line, e);
+                             // Handle unparseable lines, for example, by re-adding to a buffer for next loop
+                        }
                     }
-                    return newMessages;
-                });
+                }
             }
 
-            if (lastBotMessage && !lastBotMessage.errorType) {
-                setIntimacyProgress(prev => Math.min(prev + Math.floor(Math.random() * 3) + 1, 100));
-            }
+            // Final update after the loop finishes
+            setMessages(prev => {
+                const newMessages = [...prev];
+                const lastBotMessageIndex = newMessages.findIndex(m => m.id === botMessage.id);
+                if (lastBotMessageIndex !== -1) {
+                    newMessages[lastBotMessageIndex].isLoading = false;
+                }
+                return newMessages;
+            });
+
+            setIntimacyProgress(prev => Math.min(prev + Math.floor(Math.random() * 3) + 1, 100));
             
-            if (rateLimitErrorOccurred) {
-                const newDuration = Math.min(cooldownDuration + 2000, 10000);
-                setCooldownDuration(newDuration);
-            } else if (cooldownDuration > 2000) {
-                const newDuration = Math.max(cooldownDuration - 1000, 2000);
-                setCooldownDuration(newDuration);
-            }
-
         } catch (error) {
             console.error('Error sending message:', error);
             const errorMessage: Message = {
