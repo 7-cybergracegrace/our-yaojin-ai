@@ -1,20 +1,17 @@
-// types/index.ts
-
 export interface Message {
-    id: string;
-    sender: 'user' | 'bot' | 'notification';
+    id?: string;
+    sender: 'user' | 'model' | 'notification';
     text: string;
     image?: string;
     imageBase64?: string;
-    generatedImageUrl?: string; 
+    generatedImageUrl?: string;
+    generatedImageBase64?: string;
     imageMimeType?: string;
     isLoading?: boolean;
     quickReplies?: string[];
     intimacy?: IntimacyLevel;
     notificationContent?: string;
     errorType?: 'rate_limit' | 'safety' | 'server' | 'unknown';
-    // --- 核心修复：在这里添加新的属性 ---
-    generatedImageBase64?: string; 
 }
 
 export interface IntimacyLevel {
@@ -31,5 +28,17 @@ export interface User {
 }
 
 export type Flow = 'default' | 'chat' | 'guidance' | 'game' | 'news' | 'daily';
+
+
+export interface DailyChoice {
+    choice: string;
+    result: string;
+}
+
+// 假设的 TriageRule 类型
+export interface TriageRule {
+    action: string;
+    keywords: string[];
+}
 
 
