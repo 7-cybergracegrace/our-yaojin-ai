@@ -6,6 +6,7 @@ export interface Message {
     text: string;
     image?: string;
     imageBase64?: string;
+    generatedImageUrl?: string; 
     imageMimeType?: string;
     isLoading?: boolean;
     quickReplies?: string[];
