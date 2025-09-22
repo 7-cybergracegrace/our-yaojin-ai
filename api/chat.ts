@@ -117,13 +117,35 @@ async function* sendMessageStream(
         let externalContext: string | null = null;
         let finalPrompt = text;
 
+        // ==== 图片解析分支 ====
+        // 优先处理图片解析
+        if (imageBase64) {
+            yield { text: "本道仙正为你凝视这张图片...", isLoading: true };
+            try {
+                // 按 bltcy.ai 规范：https://wiki.bltcy.ai/node/01983606-31d1-7017-918e-af5f37f7d35b
+                const response = await streamApiCall('/v1/images/analysis', {
+                    model: "gemini-2.5-flash",
+                    image: imageBase64,
+                    prompt: "请用道仙的风格，分析并评论这张图片内容。",
+                });
+                const result = await response.json();
+                const analysisText = result?.data?.[0]?.content || result?.choices?.[0]?.message?.content || "图片解析失败，请稍后重试。";
+                yield { text: analysisText, isLoading: false };
+            } catch (err) {
+                yield { text: "图片解析失败，可能是网络或API异常。", isLoading: false };
+            }
+            return;
+        }
+
+        // ==== 文生图调用分支 ====
         if (flow === 'game' && text.toLowerCase().includes('画')) {
             yield { text: "收到，本道仙这就为你挥毫挥毫...", isLoading: true };
-            const imagePrompt = `大师级的奇幻数字艺术，充满细节，描绘一个场景：${text.replace(/画/g, '')}`;
+            // 按 bltcy.ai 文生图规范，只传 prompt，模型用 gpt-image-1
+            const imagePrompt = text.replace(/画/g, '').trim();
             try {
                 const start = Date.now();
                 const response = await streamApiCall('/v1/images/generations', {
-                    model: "gemini-2.0-flash-preview-image-generation",
+                    model: "gpt-image-1",
                     prompt: imagePrompt,
                     n: 1,
                     size: "1024x1024"
@@ -142,6 +164,7 @@ async function* sendMessageStream(
             return;
         }
 
+        // ==== 新闻流 ====
         if (flow === 'news') {
             if (text.includes('新鲜事')) {
                 systemInstruction += `\n${character.newsTopic.subTopics['新鲜事']}`;
@@ -166,7 +189,7 @@ async function* sendMessageStream(
         }
 
         // --- 修正版消息格式 ---
-        const apiMessages = convertToApiMessages(history, systemInstruction, finalPrompt, imageBase64);
+        const apiMessages = convertToApiMessages(history, systemInstruction, finalPrompt, null);
         console.log(`[${new Date().toISOString()}] [sendMessageStream] 开始chat流API调用, apiMessages=`, apiMessages);
         const start = Date.now();
         const response = await streamApiCall('/v1/chat/completions', {
