@@ -1,4 +1,5 @@
 // 文件: api/chat.ts
+
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -7,7 +8,7 @@ import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
 import { handleFortuneTelling } from '../services/fortuneTellingService.js';
 import { handleGame } from '../services/gameService.js';
 import { handleMundaneGossip } from '../services/mundaneGossipService.js';
-import { handleGeneralChat } from '../services/chatService.js'; // 新增
+import { handleGeneralChat } from '../services/chatService.js';
 import { Message, IntimacyLevel, Flow } from '../types/index.js';
 import * as character from '../core/characterSheet.js';
 
@@ -19,10 +20,7 @@ if (!API_KEY) {
 }
 
 // --- 通用 API 调用 ---
-async function streamApiCall(
-    path: string,
-    payload: any
-): Promise<Response> {
+async function streamApiCall(path: string, payload: any): Promise<Response> {
     try {
         const response = await fetch(`${API_URL}${path}`, {
             method: 'POST',
@@ -44,8 +42,7 @@ async function streamApiCall(
     }
 }
 
-// --- 意图识别和分流 ---
-// 动态读取意图识别规则库
+// --- 意图识别引擎 ---
 const trainingCorpusPath = path.join(process.cwd(), 'data', 'training_corpus.json');
 const trainingData = JSON.parse(fs.readFileSync(trainingCorpusPath, 'utf-8'));
 
@@ -66,7 +63,6 @@ ${JSON.stringify(trainingData, null, 2)}
 # 你的输出 (必须是以下JSON对象之一):
 { "intent": "匹配到的意图名称", "context": "可能存在的实体或额外信息" }
 `;
-
     try {
         const response = await streamApiCall('/v1/chat/completions', {
             model: 'gemini-2.5-flash',
@@ -75,7 +71,6 @@ ${JSON.stringify(trainingData, null, 2)}
         });
         const result = await response.json();
         const responseText = result.choices?.[0]?.message?.content?.trim();
-
         if (responseText) {
             const cleaned = responseText.replace(/^\s*```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1').trim();
             const triageResult = JSON.parse(cleaned);
@@ -89,7 +84,7 @@ ${JSON.stringify(trainingData, null, 2)}
     return { intent: '闲聊' };
 }
 
-// --- 主逻辑 ---
+// --- 主逻辑与核心路由器 ---
 async function* sendMessageStream(
     userInput: string,
     imageBase64: string | null,
@@ -101,7 +96,7 @@ async function* sendMessageStream(
 ): AsyncGenerator<Partial<Message>> {
     const { intent, context } = triageResult;
 
-    // ==== 图片解析分支 (高优先级) ====
+    // ==== 图片解析分支 (最高优先级) ====
     if (imageBase64) {
         yield { text: "本道仙正为你凝视这张图片...", isLoading: true };
         const response = await streamApiCall('/v1/images/analysis', {
@@ -121,25 +116,26 @@ async function* sendMessageStream(
         case '俗世趣闻_新鲜事':
         case '俗世趣闻_上映新片':
         case '俗世趣闻_小道仙的幻想':
-            responseText = await handleMundaneGossip(intent, userInput);
+            responseText = await handleMundaneGossip(intent);
             break;
         case '道仙日常_最近看了':
         case '道仙日常_最近买了':
         case '道仙日常_记仇小本本':
         case '道仙日常_随便聊聊':
-            responseText = handleDaoistDailyChoice(intent);
+            responseText = await handleDaoistDailyChoice(intent);
             break;
         case '游戏小摊_你说我画':
         case '游戏小摊_真心话大冒险':
         case '游戏小摊_故事接龙':
-            responseText = await handleGame(intent, userInput);
+            responseText = await handleGame(intent, userInput, currentStep);
             break;
         case '仙人指路_今日运势':
         case '仙人指路_塔罗启示':
         case '仙人指路_正缘桃花':
         case '仙人指路_事业罗盘':
         case '仙人指路_窥探因果':
-            responseText = await handleFortuneTelling(intent, userInput, context);
+        case '仙人指路_综合占卜':
+            responseText = await handleFortuneTelling(intent, userInput, context, currentStep);
             break;
         case '直接聊天_二选一':
         case '直接聊天_懒人思维':
