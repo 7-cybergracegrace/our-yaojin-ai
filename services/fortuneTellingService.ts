@@ -34,9 +34,11 @@ const tarotCards: TarotCard[] = JSON.parse(fs.readFileSync(tarotCardPath, 'utf-8
 type GuidanceFlowKey = keyof typeof character.guidanceFlows;
 
 async function getTarotReading(userTrouble: string): Promise<string> {
+    console.log(`[FortuneTellingService] 开始进行塔罗牌解读，用户困惑: "${userTrouble}"`);
     const card1 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
     const card2 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
     const card3 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+    console.log(`[FortuneTellingService] 抽到的牌面：${card1.name}, ${card2.name}, ${card3.name}`);
 
     const userPrompt = `
 # 任务
@@ -51,11 +53,13 @@ async function getTarotReading(userTrouble: string): Promise<string> {
 }
 
 async function getKarmaReading(target: string): Promise<string> {
+    console.log(`[FortuneTellingService] 开始窥探因果，目标: "${target}"`);
     const card1 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
     const card2 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
     const card3 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
     const card4 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
-    
+    console.log(`[FortuneTellingService] 抽到的牌面：${card1.name}, ${card2.name}, ${card3.name}, ${card4.name}`);
+    
     const userPrompt = `
 # 任务
 为一个凡人窥探其与他人之间的“因果”。不要仅仅罗列牌意，要将四张牌揭示的线索，与“${target}”这个对象结合起来，给出一个连贯、神秘且带有你独特风格的解读。你的解读应该是警告性质的，劝告凡人不要过多纠缠。
@@ -65,36 +69,52 @@ async function getKarmaReading(target: string): Promise<string> {
 }
 
 export async function handleFortuneTelling(
-     intent: string,
-     userInput: string,
-     currentStep: number = 0
+    intent: string,
+    userInput: string,
+    currentStep: number = 0
 ): Promise<string> {
-     const flowKey = intent.replace('仙人指路_', '') as GuidanceFlowKey;
-     const flowConfig = character.guidanceFlows[flowKey];
+    console.log(`[FortuneTellingService] 开始处理意图: ${intent}, 当前步骤: ${currentStep}`);
+    const flowKey = intent.replace('仙人指路_', '') as GuidanceFlowKey;
+    const flowConfig = character.guidanceFlows[flowKey];
 
-     if (!flowConfig) {
-         return "哼，你的问题超出了本道仙的业务范围，换个问题吧。";
-     }
-    
-     if (currentStep === 0 || currentStep === 1) {
-         const stepConfig = flowConfig.steps?.[currentStep]?.config as StepConfig;
+    if (!flowConfig) {
+        console.warn(`[FortuneTellingService] 未找到匹配的流程配置：${intent}`);
+        return "哼，你的问题超出了本道仙的业务范围，换个问题吧。";
+    }
+
+    // --- 【重构逻辑】更清晰的步骤处理 ---
+    // 步骤1：处理意图，如果当前步骤为0，返回引导信息
+    if (currentStep === 0) {
+        console.log(`[FortuneTellingService] 进入步骤 0，返回引导信息。`);
+        const stepConfig = flowConfig.steps?.[0]?.config as StepConfig;
         if (stepConfig && 'message' in stepConfig) {
-             return stepConfig.message.replace('{userInput}', userInput);
+            return stepConfig.message;
         }
-        return "本道仙不知该说什么了。";
-     }
-     
-     if (currentStep === 2) {
+    }
+    
+    // 步骤2：处理用户输入，进入下一阶段
+    if (currentStep === 1) {
+        console.log(`[FortuneTellingService] 进入步骤 1，处理用户输入: "${userInput}"`);
+        const stepConfig = flowConfig.steps?.[1]?.config as StepConfig;
+        if (stepConfig && 'message' in stepConfig) {
+            return stepConfig.message.replace('{userInput}', userInput);
+        }
+    }
+
+    // 步骤3：执行核心逻辑
+    if (currentStep === 2) {
+        console.log(`[FortuneTellingService] 进入步骤 2，执行核心逻辑。`);
         switch(flowKey) {
             case 'tarot_reading':
-                return getTarotReading(userInput);
+                console.log(`[FortuneTellingService] 匹配到塔罗启示。`);
+                return await getTarotReading(userInput);
             case 'karma_reading':
-                return getKarmaReading(userInput);
+                console.log(`[FortuneTellingService] 匹配到窥探因果。`);
+                return await getKarmaReading(userInput);
             default:
+                // 处理其他类型的占卜（如运势、桃花、事业）
+                console.log(`[FortuneTellingService] 匹配到通用占卜。`);
                 const stepConfig = flowConfig.steps?.[2]?.config as StepConfig;
-                
-                // 【修正】使用 'in' 关键字来安全地检查属性是否存在
-                // 这样 TypeScript 就能确定 stepConfig 的具体“形状”
                 if (stepConfig && 'generation_rules' in stepConfig) {
                     const rules = stepConfig.generation_rules;
                     const prompt = `
@@ -106,19 +126,28 @@ export async function handleFortuneTelling(
 # 你的解读:`;
                     return await callLLMForComment(prompt);
                 }
-
-                if (stepConfig && 'message' in stepConfig) {
-                    return stepConfig.message;
-                }
-
-                return "本道仙暂时无法解析，请稍后再试。";
         }
-     }
+    }
 
-     return "本道仙迷路了，请重新开始吧。";
+    // 如果没有匹配到任何步骤，返回错误
+    console.warn(`[FortuneTellingService] 未匹配到任何步骤。`);
+    return "本道仙暂时无法解析，请稍后再试。";
 }
 
 async function callLLMForComment(userPrompt: string): Promise<string> {
-    const systemPrompt = "你是一个骄傲、毒舌但内心关怀凡人的道仙，名为尧金。";
-    return await getLLMResponse(systemPrompt, userPrompt);
+    console.log('[FortuneTellingService] 正在调用大模型生成评论...');
+    const systemPrompt = `你是${character.persona.name}，${character.persona.description}
+你的语言和行为必须严格遵守以下规则：
+- 核心人设: ${character.persona.description}
+- 亲密度规则: ${character.persona.intimacyRules}
+- 你的说话方式是现代的，不要使用古风或文言文。
+`;
+    try {
+        const response = await getLLMResponse(systemPrompt, userPrompt);
+        console.log('[FortuneTellingService] 成功获取大模型响应。');
+        return response;
+    } catch (error) {
+        console.error('[FortuneTellingService] 大模型调用失败:', error);
+        throw error;
+    }
 }
