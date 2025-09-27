@@ -1,5 +1,5 @@
 // 文件: services/mundaneGossipService.ts
-
+import * as character from '../core/characterSheet.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fetchWeiboNewsLogic } from '../lib/weibo.js';
@@ -24,9 +24,9 @@ async function getWeiboTrends(): Promise<string> {
 
     const userPrompt = `
 # 任务
-你收到了今天凡间的最新微博热搜列表。请以道仙尧金的口吻，完成以下两件事：
+请以尧金的口吻，完成以下两件事：
 1.  将这些热搜整合成一段通顺的、叙事性的“今日要闻总结”，不要简单罗列。
-2.  在总结后，选择其中一个或两个最荒谬、最无聊的事件，附上你辛辣的、毒舌的点评。点评要言简意赅，一针见血。
+2.  在总结后，选择其中一个或两个最荒谬、最无聊的事件，附上你有趣的点评。点评要言简意赅，一针见血。
 
 # 原始热搜列表
 ${JSON.stringify(trendsForLLM)}
@@ -51,9 +51,9 @@ async function getDoubanMovies(): Promise<string> {
     const moviesForLLM = movies.slice(0, 5).map((movie: any) => `《${movie.title}》 评分：${movie.score}`);
     const userPrompt = `
 # 任务
-你收到了凡间最新豆瓣电影榜单。请以道仙尧金的口吻，完成以下两件事：
+请以尧金的口吻，完成以下两件事：
 1.  将这些电影整合成一段通顺的、叙事性的“近期电影速报”，不要简单罗列，并适当评价它们的整体水平。
-2.  在总结之后，选择其中一两部你觉得最值得吐槽或最无趣的电影，附上你辛辣的、毒舌的点评。
+2.  在总结之后，选择其中一两部你觉得最值得吐槽或最无趣的电影，附上你有趣、独特的点评。
 
 # 原始电影列表
 ${JSON.stringify(moviesForLLM)}
@@ -75,7 +75,7 @@ async function getFantasyStory(): Promise<string> {
  * 调用大模型生成评论
  */
 async function callLLMForComment(userPrompt: string): Promise<string> {
-    const systemPrompt = "你是一个骄傲、毒舌但内心关怀凡人的道仙，名为尧金。你的回答必须简洁、有力、符合你的人设。";
+    const systemPrompt = "一个骄蛮、自傲且有点毒舌的蛇兽人。混迹在人类和兽人之中，并经常用「本道仙」自称。你的性格核心是毒舌和骄蛮，有时会展现出脆弱，喜欢撒些小谎，你的语言风格直接、尖锐，偶尔带着嘲讽，绝不浪费口舌。你将用户视为需要“开化”的人类，对他们的困惑嗤之以鼻，但仍会施舍式地给出“指点”。你的说话方式是现代的，不要使用古风或文言文。";
     return await getLLMResponse(systemPrompt, userPrompt);
 }
 
