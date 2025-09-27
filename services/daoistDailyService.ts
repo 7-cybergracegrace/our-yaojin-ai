@@ -1,57 +1,106 @@
 // 文件: services/daoistDailyService.ts
 
+import * as character from '../core/characterSheet.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { getLLMResponse } from '../lib/llm.js';
 
-/**
- * 根据不同的意图，读取对应的数据文件并返回一条随机内容。
- * @param intent '道仙日常'的具体意图
- * @returns 从对应文件中随机抽取的一段文本
- */
-function getRandomItemForIntent(intent: string): string {
-    // 创建一个意图到文件名的映射
-    const intentToFileMap: { [key: string]: string } = {
-        '道仙日常_最近看了': '文艺评论.json',
-        '道仙日常_最近买了': '购物清单.json',
-        '道仙日常_记仇小本本': '记仇小本本.json',
-        '道仙日常_随便聊聊': '生活小事.json' // '随便聊聊'我们让它从'生活小事'里选
-    };
+// --- 数据文件路径 (修改后) ---
+const reviewPath = path.join(process.cwd(), 'data', '文艺评论.json');
+const shoppingListPath = path.join(process.cwd(), 'data', '购物清单.json');
+const grudgeListPath = path.join(process.cwd(), 'data', '记仇小本本.json');
+const lifestyleScenesPath = path.join(process.cwd(), 'data', '生活小事.json');
 
-    // 从意图中提取关键词，例如从 '道仙日常_最近看了' 提取 '最近看了'
-    const key = intent.split('_')[1];
-    
-    // 找到对应的文件名
-    const fileName = intentToFileMap[intent];
+// --- 加载数据 ---
+const reviews: { content: string }[] = JSON.parse(fs.readFileSync(reviewPath, 'utf-8'));
+const shoppingItems: { content: string }[] = JSON.parse(fs.readFileSync(shoppingListPath, 'utf-8'));
+const grudgeEvents: { content: string }[] = JSON.parse(fs.readFileSync(grudgeListPath, 'utf-8'));
+const lifestyleScenes: { content: string }[] = JSON.parse(fs.readFileSync(lifestyleScenesPath, 'utf-8'));
 
-    if (!fileName) {
-        return "哼，这事儿本道仙还没想好怎么说。";
-    }
+// --- 辅助函数：生成系统指令 ---
+const getSystemInstruction = (): string => {
+    return `你是${character.persona.name}，${character.persona.description}
+你的语言和行为必须严格遵守以下规则：
+- 核心人设: ${character.persona.description}
+- 亲密度规则: ${character.persona.intimacyRules}
+- 你的说话方式是现代的，不要使用古风或文言文。
+`;
+};
 
+// --- 具体处理逻辑 ---
+async function getReview(): Promise<string> {
+    console.log('[DaoistDailyService] 正在获取文艺评论...');
+    const review = reviews[Math.floor(Math.random() * reviews.length)];
+    console.log('[DaoistDailyService] 成功获取文艺评论。');
+    return review.content;
+}
+
+async function getShoppingItem(): Promise<string> {
+    console.log('[DaoistDailyService] 正在获取购物清单。');
+    const item = shoppingItems[Math.floor(Math.random() * shoppingItems.length)];
+    const userPrompt = `以尧金的口吻，描述以下购物清单中的一个项目。描述要生动有趣，最好能引人吐槽，并邀请用户分享自己最近买了什么。
+    项目：${item.content}
+    你的描述:`;
+    const systemPrompt = getSystemInstruction();
     try {
-        const filePath = path.join(process.cwd(), 'data', fileName);
-        const fileContent = fs.readFileSync(filePath, 'utf-8');
-        const data: { content: string }[] = JSON.parse(fileContent);
-
-        if (data.length === 0) {
-            return `哼，关于${key}，本道仙今天没什么想说的。`;
-        }
-
-        // 从数据中随机抽取一条
-        const randomItem = data[Math.floor(Math.random() * data.length)];
-        return randomItem.content;
-
+        const response = await getLLMResponse(systemPrompt, userPrompt);
+        console.log('[DaoistDailyService] 成功获取大模型响应（购物清单）。');
+        return response;
     } catch (error) {
-        console.error(`Error reading or parsing file for intent ${intent}:`, error);
-        // 如果文件读取失败或格式错误，返回一个统一的错误信息
-        return `哼，关于${key}的记忆有点模糊，本道仙想不起来了。`;
+        console.error('[DaoistDailyService] 大模型调用失败（购物清单）:', error);
+        throw error;
     }
 }
 
-/**
- * 处理“道仙日常”模块的主函数
- * @param intent ওয়ার্ম intent
- * @returns 最终的回复文本
- */
-export async function handleDaoistDailyChoice(intent: string): Promise<string> {
-    return getRandomItemForIntent(intent);
+async function getGrudgeEvent(): Promise<string> {
+    console.log('[DaoistDailyService] 正在获取记仇事件。');
+    const grudge = grudgeEvents[Math.floor(Math.random() * grudgeEvents.length)];
+    const userPrompt = `以尧金的口吻，描述以下一个事件，并邀请用户分享自己讨厌的人或事。在描述中提及你会为讨厌的人画诅咒符。
+    事件：${grudge.content}
+    你的描述:`;
+    const systemPrompt = getSystemInstruction();
+    try {
+        const response = await getLLMResponse(systemPrompt, userPrompt);
+        console.log('[DaoistDailyService] 成功获取大模型响应（记仇事件）。');
+        return response;
+    } catch (error) {
+        console.error('[DaoistDailyService] 大模型调用失败（记仇事件）:', error);
+        throw error;
+    }
+}
+
+async function getLifestyleScene(): Promise<string> {
+    console.log('[DaoistDailyService] 正在获取生活场景。');
+    const scene = lifestyleScenes[Math.floor(Math.random() * lifestyleScenes.length)];
+    console.log('[DaoistDailyService] 成功获取生活场景。');
+    return scene.content;
+}
+
+// 由于缺少诅咒库文件，这个函数暂时无法使用
+// async function getCurse(): Promise<string> {
+//     console.log('[DaoistDailyService] 正在获取诅咒符。');
+//     const curse = curses[Math.floor(Math.random() * curses.length)];
+//     console.log('[DaoistDailyService] 成功获取诅咒符。');
+//     return curse.content;
+// }
+
+// --- 核心处理器 ---
+export async function handleDaoistDailyChoice(intent: string, userInput?: string): Promise<string> {
+    console.log(`[DaoistDailyService] 意图分发：${intent}`);
+    switch (intent) {
+        case '道仙日常_最近看了':
+            return getReview();
+        case '道仙日常_最近买了':
+            return getShoppingItem();
+        case '道仙日常_记仇小本本':
+            return getGrudgeEvent();
+        case '道仙日常_随便聊聊':
+            return getLifestyleScene();
+        // 因为缺少诅咒库文件，暂时移除这个 case
+        // case '道仙日常_诅咒符':
+        //     return getCurse();
+        default:
+            console.warn(`[DaoistDailyService] 未匹配到意图: ${intent}`);
+            return "哼，你的问题超出了本道仙的业务范围，换个问题吧。";
+    }
 }
