@@ -10,8 +10,7 @@ const fantasyStoryPath = path.join(process.cwd(), 'data', '小道仙的幻想.js
 const fantasyStories: { content: string }[] = JSON.parse(fs.readFileSync(fantasyStoryPath, 'utf-8'));
 
 /**
- * 获取并评论微博热搜榜
- * @returns 包含热搜列表和评论的文本
+ * 获取并以“总结+点评”的形式回应微博热搜
  */
 async function getWeiboTrends(): Promise<string> {
     const trends = await fetchWeiboNewsLogic(); 
@@ -20,18 +19,26 @@ async function getWeiboTrends(): Promise<string> {
         return "哼，今天微博没啥新鲜事，人类的八卦果然经不起本道仙的法眼。";
     }
 
-    const formattedTrends = trends.slice(0, 10).map((item: any, index: number) => `${index + 1}. ${item.title}`).join('\n');
+    // 【逻辑升级】我们将原始的热搜数据直接交给大模型，让它来总结和点评
+     const trendsForLLM = trends.slice(0, 10).map(item => item.title);
     
-    const userPrompt = `点评一下今天的这些凡间热搜，要毒舌、要一针见血：\n${formattedTrends}`;
-    const comment = await callLLMForComment(userPrompt);
-    
-     const finalResponse = `哼，今天的凡间热搜不过是这些罢了：\n\n${formattedTrends}\n\n${comment}`;
-     return finalResponse;
+     const userPrompt = `
+# 任务
+你收到了今天凡间的最新微博热搜列表。请完成以下两件事：
+1.  用你作为道仙的、略带不屑的口吻，将这些热搜整合成一段通顺的、叙事性的“今日要闻总结”，而不是简单地罗列出来。
+2.  在总结之后，附上你对其中一两个最荒谬或最无聊事件的毒舌点评。
+
+# 原始热搜列表
+${JSON.stringify(trendsForLLM)}
+
+# 你的总结与点评：
+`;
+     // 直接返回大模型生成的完整回复
+     return await callLLMForComment(userPrompt);
 }
 
 /**
- * 获取并评论豆瓣电影榜单
- * @returns 包含电影列表和评论的文本
+ * 获取豆瓣电影并以“罗列+引导”的形式回应
  */
 async function getDoubanMovies(): Promise<string> {
     const movies = await fetchDoubanMoviesLogic();
@@ -42,36 +49,29 @@ async function getDoubanMovies(): Promise<string> {
 
     const formattedMovies = movies.slice(0, 5).map((movie: any) => `- 《${movie.title}》，评分 ${movie.score}`).join('\n');
 
-    const userPrompt = `点评一下最近凡间的这些电影，要不屑一顾、要显得你品味很高：\n${formattedMovies}`;
-    const comment = await callLLMForComment(userPrompt);
-
-     const finalResponse = `凡人最近就捣鼓出这些电影么，让本道仙瞧瞧：\n\n${formattedMovies}\n\n${comment}`;
+    // 【逻辑升级】在话术结尾增加引导性问题
+     const finalResponse = `凡人最近就捣鼓出这些电影么，让本道仙瞧瞧：\n\n${formattedMovies}\n\n哼，有哪部是你想让本道仙为你深入锐评一番的？`;
      return finalResponse;
 }
 
 /**
- * 分享一个随机的幻想故事 (已按要求修改)
- * @returns 包含幻想故事的文本
+ * 分享一个随机的幻想故事
  */
 async function getFantasyStory(): Promise<string> {
     const story = fantasyStories[Math.floor(Math.random() * fantasyStories.length)];
-    return story.content; // 直接返回故事内容
+    return story.content;
 }
 
 /**
- * 调用大模型生成评论 (已升级)
- * @param userPrompt 用户的具体问题或指令
- * @returns 大模型的回复
+ * 调用大模型生成评论
  */
 async function callLLMForComment(userPrompt: string): Promise<string> {
-    const systemPrompt = "你是一个骄傲、毒舌但内心关怀人类的蛇兽人，喜欢自称“本道仙”，名为尧金。你的回答必须简洁、有力、符合你的人设。";
+    const systemPrompt = "你是一个骄傲、毒舌但内心关怀凡人的道仙，名为尧金。你的回答必须简洁、有力、符合你的人设。";
     return await getLLMResponse(systemPrompt, userPrompt);
 }
 
 /**
  * 处理“俗世趣闻”模块的主函数
- * @param intent 具体的意图
- * @returns 最终的回复文本
  */
 export async function handleMundaneGossip(intent: string): Promise<string> {
     switch (intent) {
