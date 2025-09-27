@@ -83,6 +83,29 @@ ${JSON.stringify(trainingData, null, 2)}
   return { intent: '闲聊' };
 }
 
+// --- 意图映射函数（新增）---
+function mapClickedIntent(module: string, option: string): string | null {
+    const intentMap: { [key: string]: string } = {
+        'news_新鲜事': '俗世趣闻_新鲜事',
+        'news_上映新片': '俗世趣闻_上映新片',
+        'news_小道仙的幻想': '俗世趣闻_小道仙的幻想',
+        'guidance_今日运势': '仙人指路_今日运势',
+        'guidance_塔罗启示': '仙人指路_塔罗启示',
+        'guidance_正缘桃花': '仙人指路_正缘桃花',
+        'guidance_事业罗盘': '仙人指路_事业罗盘',
+        'daily_最近看了...': '道仙日常_最近看了', // 修改为与前端完全匹配
+        'daily_最近买了...': '道仙日常_最近买了',
+        'daily_我的记仇小本本': '道仙日常_记仇小本本',
+        'daily_随便聊聊...': '道仙日常_随便聊聊',
+        'game_你说我画': '游戏小摊_你说我画',
+        'game_真心话大冒险': '游戏小摊_真心话大冒险',
+        'game_故事接龙': '游戏小摊_故事接龙',
+    };
+
+    const key = `${module}_${option}`;
+    return intentMap[key] || null;
+}
+
 // --- 主逻辑与核心路由器 ---
 async function* sendMessageStream(
   userInput: string,
@@ -217,10 +240,8 @@ const convertToApiMessages = (
 
 // Vercel/Next.js 路由处理器
 export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelResponse) => {
-  // 从请求体中解构出新的字段
   const { text, imageBase64, history, intimacy, userName, currentStep, clickedModule, clickedOption } = req.body;
   
-  // 添加日志：查看前端传递过来的信息
   console.log('[API] 接收到请求，模块:', clickedModule, '选项:', clickedOption, '文本:', text);
 
   if (!text && !imageBase64 && !clickedModule) {
@@ -230,17 +251,19 @@ export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelRe
   
   let triageResult = { intent: '闲聊' };
 
-  // 优先级：如果有点击的模块和选项，直接使用它
   if (clickedModule && clickedOption) {
-      triageResult.intent = `${clickedModule}_${clickedOption}`;
-      console.log(`[API] 检测到点击事件，直接设置意图为: ${triageResult.intent}`);
+    const mappedIntent = mapClickedIntent(clickedModule, clickedOption);
+    if (mappedIntent) {
+        triageResult.intent = mappedIntent;
+        console.log(`[API] 检测到点击事件，映射意图为: ${triageResult.intent}`);
+    } else {
+        console.warn(`[API] 意图映射失败：${clickedModule}_${clickedOption}`);
+    }
   } else {
-      // 否则，才使用意图识别引擎来处理用户文本输入
-      triageResult = await runTriage(text);
-      console.log(`[API] 文本分流结果:`, triageResult.intent);
+    triageResult = await runTriage(text);
+    console.log(`[API] 文本分流结果:`, triageResult.intent);
   }
 
-  // ... 后面的 sendMessageStream 函数调用和响应逻辑保持不变 ...
   res.writeHead(200, {
       'Content-Type': 'text/plain; charset=utf-8',
       'Transfer-Encoding': 'chunked',
