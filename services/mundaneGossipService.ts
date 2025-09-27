@@ -2,80 +2,75 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { fetchWeiboNewsLogic } from '../lib/weibo.js'; // 假设这个文件用于获取微博数据
-import { fetchDoubanMoviesLogic } from '../lib/douban.js'; // 假设这个文件用于获取豆瓣数据
-// 【TS6133 错误修正】移除了未使用的 'character' 导入
-// import * as character from '../core/characterSheet.js'; 
+import { fetchWeiboNewsLogic } from '../lib/weibo.js'; 
+import { fetchDoubanMoviesLogic } from '../lib/douban.js';
+import { getLLMResponse } from '../lib/llm.js';
 
-// 假设你有专门的知识库，用于幻想故事
 const fantasyStoryPath = path.join(process.cwd(), 'data', '小道仙的幻想.json');
-const fantasyStories = JSON.parse(fs.readFileSync(fantasyStoryPath, 'utf-8'));
+const fantasyStories: { content: string }[] = JSON.parse(fs.readFileSync(fantasyStoryPath, 'utf-8'));
 
 /**
  * 获取并评论微博热搜榜
- * @returns 包含热搜评论的文本
+ * @returns 包含热搜列表和评论的文本
  */
 async function getWeiboTrends(): Promise<string> {
-    const trends = await fetchWeiboNewsLogic(); // 调用lib/weibo.js中的函数
+    const trends = await fetchWeiboNewsLogic(); 
     
     if (!trends || trends.length === 0) {
         return "哼，今天微博没啥新鲜事，人类的八卦果然经不起本道仙的法眼。";
     }
 
-    const formattedTrends = trends.map((item: any, index: number) => `【${index + 1}】${item.title}`).join('\n');
+    const formattedTrends = trends.slice(0, 10).map((item: any, index: number) => `${index + 1}. ${item.title}`).join('\n');
     
-    // 占位符：用大模型根据热搜列表进行毒舌评论
-    const prompt = `你是一个骄傲毒舌的道仙，名为尧金。请以嘲讽的口吻，点评以下微博热搜：\n${formattedTrends}`;
-    const comment = await callLLMForComment(prompt); // 假设有一个调用大模型的函数
+    const userPrompt = `点评一下今天的这些凡间热搜，要毒舌、要一针见血：\n${formattedTrends}`;
+    const comment = await callLLMForComment(userPrompt);
     
-    return comment;
+     const finalResponse = `哼，今天的凡间热搜不过是这些罢了：\n\n${formattedTrends}\n\n${comment}`;
+     return finalResponse;
 }
 
 /**
  * 获取并评论豆瓣电影榜单
- * @returns 包含电影评论的文本
+ * @returns 包含电影列表和评论的文本
  */
 async function getDoubanMovies(): Promise<string> {
-    const movies = await fetchDoubanMoviesLogic(); // 调用lib/douban.js中的函数
+    const movies = await fetchDoubanMoviesLogic();
     
     if (!movies || movies.length === 0) {
         return "哼，最近的电影都无聊透顶，本道仙都懒得看。";
     }
 
-    const formattedMovies = movies.map((movie: any, index: number) => `【${index + 1}】《${movie.title}》- 评分: ${movie.score}`).join('\n');
+    const formattedMovies = movies.slice(0, 5).map((movie: any) => `- 《${movie.title}》，评分 ${movie.score}`).join('\n');
 
-    // 占位符：用大模型根据电影列表进行毒舌评论
-    const prompt = `你是一个骄傲毒舌的道仙，名为尧金。请以不屑的口吻，点评以下豆瓣电影榜单：\n${formattedMovies}`;
-    const comment = await callLLMForComment(prompt);
+    const userPrompt = `点评一下最近凡间的这些电影，要不屑一顾、要显得你品味很高：\n${formattedMovies}`;
+    const comment = await callLLMForComment(userPrompt);
 
-    return comment;
+     const finalResponse = `凡人最近就捣鼓出这些电影么，让本道仙瞧瞧：\n\n${formattedMovies}\n\n${comment}`;
+     return finalResponse;
 }
 
 /**
- * 分享一个随机的幻想故事
+ * 分享一个随机的幻想故事 (已按要求修改)
  * @returns 包含幻想故事的文本
  */
 async function getFantasyStory(): Promise<string> {
     const story = fantasyStories[Math.floor(Math.random() * fantasyStories.length)];
-    return `哼，想听本道仙的幻想？听好了，我给你讲个故事……\n\n${story.content}`;
+    return story.content; // 直接返回故事内容
 }
 
 /**
- * 占位符：调用大模型生成评论
- * @param prompt 大模型的提示词
+ * 调用大模型生成评论 (已升级)
+ * @param userPrompt 用户的具体问题或指令
  * @returns 大模型的回复
  */
-// 【TS6133 错误修正】在未使用的参数 'prompt' 前加上下划线 '_'
-async function callLLMForComment(_prompt: string): Promise<string> {
-    // 假设你有能力调用外部AI API，这里是占位符
-    // 你需要自己实现这个函数，将 prompt 发送给大模型
-    // 并返回大模型的回复
-    return `（这里是大模型的毒舌评论）`;
+async function callLLMForComment(userPrompt: string): Promise<string> {
+    const systemPrompt = "你是一个骄傲、毒舌但内心关怀人类的蛇兽人，喜欢自称“本道仙”，名为尧金。你的回答必须简洁、有力、符合你的人设。";
+    return await getLLMResponse(systemPrompt, userPrompt);
 }
 
 /**
  * 处理“俗世趣闻”模块的主函数
- * @param intent 具体的意图，如 '俗世趣闻_新鲜事'
+ * @param intent 具体的意图
  * @returns 最终的回复文本
  */
 export async function handleMundaneGossip(intent: string): Promise<string> {
