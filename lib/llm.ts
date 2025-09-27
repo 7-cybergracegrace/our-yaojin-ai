@@ -16,7 +16,8 @@ export async function getLLMResponse(systemPrompt: string, userPrompt: string): 
     }
 
     try {
-        const response = await fetch(`${API_URL}/vV1/chat/completions`, {
+        // 【修正】将错误的 "/vV1/" 修改为正确的 "/v1/"
+        const response = await fetch(`${API_URL}/v1/chat/completions`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -36,6 +37,14 @@ export async function getLLMResponse(systemPrompt: string, userPrompt: string): 
             const errorBody = await response.text();
             console.error(`API request failed with status ${response.status}: ${errorBody}`);
             return "天机混乱，本道仙算不出来。";
+        }
+
+        // 增加一层保护：检查返回的是否真的是JSON
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+            const errorText = await response.text();
+            console.error("API did not return JSON. Response body:", errorText);
+            return `哼，天界网络似乎出了点问题，返回了一堆乱码。`;
         }
 
         const result = await response.json();
