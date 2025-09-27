@@ -8,9 +8,8 @@ import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
 import { handleFortuneTelling } from '../services/fortuneTellingService.js';
 import { handleGame } from '../services/gameService.js';
 import { handleMundaneGossip } from '../services/mundaneGossipService.js';
-// 【注意】下面这行导入的 TS2307 错误，需要你检查文件路径和 tsconfig.json 配置
-import { handleGeneralChat } from '../services/chatService.js'; 
-import { Message, IntimacyLevel, Flow } from '../types/index.js';
+import { handleGeneralChat } from '../services/chatService.js';
+import { Message, IntimacyLevel } from '../types/index.js'; 
 import * as character from '../core/characterSheet.js';
 
 const API_URL = 'https://api.bltcy.ai';
@@ -47,7 +46,6 @@ async function streamApiCall(path: string, payload: any): Promise<Response> {
 const trainingCorpusPath = path.join(process.cwd(), 'data', 'training_corpus.json');
 const trainingData = JSON.parse(fs.readFileSync(trainingCorpusPath, 'utf-8'));
 
-// 【修正 TS6133】移除了未使用的 userName 和 intimacy 参数
 async function runTriage(userInput: string): Promise<{ intent: string, context?: any }> {
     const triagePrompt = `
 # 指令
@@ -96,7 +94,7 @@ async function* sendMessageStream(
     triageResult: { intent: string, context?: any },
     currentStep?: number
 ): AsyncGenerator<Partial<Message>> {
-    const { intent, context } = triageResult;
+    const { intent } = triageResult;
 
     // ==== 图片解析分支 (最高优先级) ====
     if (imageBase64) {
@@ -137,7 +135,6 @@ async function* sendMessageStream(
         case '仙人指路_事业罗盘':
         case '仙人指路_窥探因果':
         case '仙人指路_综合占卜':
-            // 注意：我们在上一步已经修改了 handleFortuneTelling 的签名，这里也需要同步
             responseText = await handleFortuneTelling(intent, userInput, currentStep);
             break;
         case '直接聊天_二选一':
@@ -146,9 +143,7 @@ async function* sendMessageStream(
             responseText = await handleGeneralChat(intent, userInput);
             break;
         default: // 情感类和闲聊
-            // 【修正 TS6133】调用 getSystemInstruction 时，不再传入 flow 和 currentStep
             const systemInstruction = getSystemInstruction(intimacy, userName);
-            // 【修正 TS6133】调用 convertToApiMessages 时，不再传入 imageBase64 (因为这里是 null)
             const apiMessages = convertToApiMessages(history, systemInstruction, userInput);
             const response = await streamApiCall('/v1/chat/completions', {
                 model: 'gemini-2.5-flash',
@@ -188,7 +183,6 @@ async function* sendMessageStream(
 }
 
 // --- 辅助: 构造 system 指令 ---
-// 【修正 TS6133】移除了未使用的 flow 和 currentStep 参数
 const getSystemInstruction = (intimacy: IntimacyLevel, userName: string): string => {
     let instruction = `你是${character.persona.name}，${character.persona.description}
 你的语言和行为必须严格遵守以下规则：
@@ -203,7 +197,6 @@ const getSystemInstruction = (intimacy: IntimacyLevel, userName: string): string
 };
 
 // --- 修正版消息格式构造 ---
-// 【修正 TS6133】移除了未使用的 imageBase64 参数
 const convertToApiMessages = (
     history: Message[],
     systemInstruction: string,
@@ -231,7 +224,6 @@ export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelRe
     }
 
     // 意图分流
-    // 【修正 TS6133】调用 runTriage 时，不再传入 userName 和 intimacy
     const triageResult = await runTriage(text);
     console.log(`[API] 分流结果:`, triageResult.intent);
 
