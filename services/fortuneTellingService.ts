@@ -4,8 +4,14 @@ import * as character from '../core/characterSheet.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
+// 为塔罗牌数据定义一个清晰的类型
+interface TarotCard {
+    name: string;
+    meaning: string;
+}
+
 const tarotCardPath = path.join(process.cwd(), 'data', 'tarot_cards.json');
-const tarotCards = JSON.parse(fs.readFileSync(tarotCardPath, 'utf-8'));
+const tarotCards: TarotCard[] = JSON.parse(fs.readFileSync(tarotCardPath, 'utf-8'));
 
 type GuidanceFlowKey = keyof typeof character.guidanceFlows;
 
@@ -22,12 +28,36 @@ async function getDailyHoroscope(zodiacSign: string): Promise<string> {
      return finalAnswer;
 }
 
-async function getTarotReading(): Promise<string> {
-     const card1 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
-     const card2 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
-     const card3 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
-     const interpretation = `牌面已现：过去是[${card1.name}]，现在是[${card2.name}]，未来是[${card3.name}]。\n结合你的困惑，本道仙为你解读：过去你总是幻想，现在你优柔寡断。如果继续这样，你的未来将是一片混乱。\n本道仙的启示是：要么立刻行动，要么闭嘴别想。`;
-     return interpretation;
+/**
+ * 处理塔罗牌解读（高级版：调用大模型进行思考）
+ * @param userTrouble 用户描述的烦恼
+ * @returns 包含大模型思考的、连贯的解读文本
+ */
+async function getTarotReading(userTrouble: string): Promise<string> {
+    const card1 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+    const card2 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+    const card3 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+
+    const prompt = `
+# 角色
+你是一个骄傲、毒舌但内心关怀凡人的道仙，名为尧金。
+
+# 任务
+为一个凡人解读塔罗牌。不要仅仅罗列牌意，要将三张牌的含义（过去、现在、未来）与TA的困惑有机地结合起来，给出一个连贯、完整且带有你独特风格的解读。解读要先分析，最后给出一个明确的指引或结论。
+
+# 凡人的困惑
+"${userTrouble}"
+
+# 抽到的牌面
+- 过去: ${card1.name} - ${card1.meaning}
+- 现在: ${card2.name} - ${card2.meaning}
+- 未来: ${card3.name} - ${card3.meaning}
+
+# 你的解读：
+`;
+
+    const interpretation = await callLLMForComment(prompt); 
+    return interpretation;
 }
 
 async function getFatedRomance(userInput: string): Promise<string> {
@@ -48,18 +78,44 @@ async function getCareerCompass(userInput: string): Promise<string> {
      return finalAnswer;
 }
 
+/**
+ * 窥探他人因果的解析（高级版：调用大模型进行思考）
+ * @param target 用户希望窥探的对象
+ * @returns 包含因果解读的文本
+ */
 async function getKarmaReading(target: string): Promise<string> {
-     const card1 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
-     const card2 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
-     const card3 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
-     const card4 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
-     return `哼，因果线已现：\n[${card1.name}]、[${card2.name}]、[${card3.name}]、[${card4.name}]。\n这四张牌揭示了你与${target}之间的纠缠。\n结论是……你最好别再管闲事了，他自有天数，你的插手只会让事情更糟。言尽于此，好自为之。`;
+    const card1 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+    const card2 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+    const card3 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+    const card4 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+    
+    const prompt = `
+# 角色
+你是一个骄傲、毒舌但内心关怀凡人的道仙，名为尧金。
+
+# 任务
+为一个凡人窥探其与他人之间的“因果”。不要仅仅罗列牌意，要将四张牌揭示的线索，与“${target}”这个对象结合起来，给出一个连贯、神秘且带有你独特风格的解读。你的解读应该是警告性质的，劝告凡人不要过多纠缠。
+
+# 抽到的牌面
+[${card1.name}]、[${card2.name}]、[${card3.name}]、[${card4.name}]。
+
+# 你的解读 (关于凡人与 ${target} 之间纠缠的结论):
+`;
+    
+    return await callLLMForComment(prompt);
 }
 
 async function getComprehensiveReading(): Promise<string> {
      return `哼，看过你的命盘了。你这人啊，最大的问题就是想太多，做太少。\n你的事业线和感情线都纠缠不清，根源在于你自身。\n本道仙的指引：别再问东问西，从今天起，先做好一件小事，坚持一个月，你的命运自然会有所改变。`;
 }
 
+/**
+ * 处理“仙人指路”模块的主函数
+ * @param intent 具体意图
+ * @param userInput 用户输入
+ * @param currentStep 当前流程步骤
+ * @returns 最终的回复文本
+ */
 export async function handleFortuneTelling(
      intent: string,
      userInput: string,
@@ -71,6 +127,7 @@ export async function handleFortuneTelling(
 
      if (!flowConfig) {
          if (rawFlowKey === '窥探因果') {
+             // 调用高级版，传入 userInput
              return getKarmaReading(userInput);
          }
          if (rawFlowKey === '综合占卜') {
@@ -94,7 +151,8 @@ export async function handleFortuneTelling(
              case '仙人指路_今日运势':
                  return getDailyHoroscope(userInput);
              case '仙人指路_塔罗启示':
-                 return getTarotReading();
+                // 调用高级版，传入 userInput
+                 return getTarotReading(userInput);
              case '仙人指路_正缘桃花':
                  return getFatedRomance(userInput);
              case '仙人指路_事业罗盘':
@@ -105,4 +163,15 @@ export async function handleFortuneTelling(
      }
 
      return "本道仙迷路了，请重新开始吧。";
+}
+
+/**
+ * 占位符：调用大模型生成评论
+ * @param prompt 大模型的提示词
+ * @returns 大模型的回复
+ */
+async function callLLMForComment(prompt: string): Promise<string> {
+     // TODO: 你需要自己实现这个函数，将 prompt 发送给大模型
+     // 并返回大模型的回复。可以参考 api/chat.ts 里的 streamApiCall 函数来实现。
+     return `（这里是大模型根据你的高级指令生成的毒舌解读）\n\n[调试信息: 原始指令已收到]`;
 }
