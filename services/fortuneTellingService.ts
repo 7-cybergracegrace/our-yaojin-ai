@@ -28,11 +28,6 @@ async function getDailyHoroscope(zodiacSign: string): Promise<string> {
      return finalAnswer;
 }
 
-/**
- * 处理塔罗牌解读（高级版：调用大模型进行思考）
- * @param userTrouble 用户描述的烦恼
- * @returns 包含大模型思考的、连贯的解读文本
- */
 async function getTarotReading(userTrouble: string): Promise<string> {
     const card1 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
     const card2 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
@@ -78,11 +73,6 @@ async function getCareerCompass(userInput: string): Promise<string> {
      return finalAnswer;
 }
 
-/**
- * 窥探他人因果的解析（高级版：调用大模型进行思考）
- * @param target 用户希望窥探的对象
- * @returns 包含因果解读的文本
- */
 async function getKarmaReading(target: string): Promise<string> {
     const card1 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
     const card2 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
@@ -109,13 +99,6 @@ async function getComprehensiveReading(): Promise<string> {
      return `哼，看过你的命盘了。你这人啊，最大的问题就是想太多，做太少。\n你的事业线和感情线都纠缠不清，根源在于你自身。\n本道仙的指引：别再问东问西，从今天起，先做好一件小事，坚持一个月，你的命运自然会有所改变。`;
 }
 
-/**
- * 处理“仙人指路”模块的主函数
- * @param intent 具体意图
- * @param userInput 用户输入
- * @param currentStep 当前流程步骤
- * @returns 最终的回复文本
- */
 export async function handleFortuneTelling(
      intent: string,
      userInput: string,
@@ -127,7 +110,6 @@ export async function handleFortuneTelling(
 
      if (!flowConfig) {
          if (rawFlowKey === '窥探因果') {
-             // 调用高级版，传入 userInput
              return getKarmaReading(userInput);
          }
          if (rawFlowKey === '综合占卜') {
@@ -151,7 +133,6 @@ export async function handleFortuneTelling(
              case '仙人指路_今日运势':
                  return getDailyHoroscope(userInput);
              case '仙人指路_塔罗启示':
-                // 调用高级版，传入 userInput
                  return getTarotReading(userInput);
              case '仙人指路_正缘桃花':
                  return getFatedRomance(userInput);
@@ -165,12 +146,7 @@ export async function handleFortuneTelling(
      return "本道仙迷路了，请重新开始吧。";
 }
 
-/**
- * 占位符：调用大模型生成评论
- * @param prompt 大模型的提示词
- * @returns 大模型的回复
- */
-async function callLLMForComment(prompt: string): Promise<string> {
+async function callLLMForComment(_prompt: string): Promise<string> {
      // TODO: 你需要自己实现这个函数，将 prompt 发送给大模型
      // 并返回大模型的回复。可以参考 api/chat.ts 里的 streamApiCall 函数来实现。
      return `（这里是大模型根据你的高级指令生成的毒舌解读）\n\n[调试信息: 原始指令已收到]`;
