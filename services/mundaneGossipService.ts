@@ -9,9 +9,7 @@ import { getLLMResponse } from '../lib/llm.js';
 const fantasyStoryPath = path.join(process.cwd(), 'data', '小道仙的幻想.json');
 const fantasyStories: { content: string }[] = JSON.parse(fs.readFileSync(fantasyStoryPath, 'utf-8'));
 
-/**
- * 获取并以“总结+点评”的形式回应微博热搜
- */
+
 async function getWeiboTrends(): Promise<string> {
     const trends = await fetchWeiboNewsLogic();
 
@@ -37,9 +35,7 @@ ${JSON.stringify(trendsForLLM)}
     return await callLLMForComment(userPrompt);
 }
 
-/**
- * 获取豆瓣电影并以“总结+点评”的形式回应
- */
+
 async function getDoubanMovies(): Promise<string> {
     const movies = await fetchDoubanMoviesLogic();
 
@@ -63,25 +59,19 @@ ${JSON.stringify(moviesForLLM)}
     return await callLLMForComment(userPrompt);
 }
 
-/**
- * 分享一个随机的幻想故事
- */
+
 async function getFantasyStory(): Promise<string> {
     const story = fantasyStories[Math.floor(Math.random() * fantasyStories.length)];
     return story.content;
 }
 
-/**
- * 调用大模型生成评论
- */
+
 async function callLLMForComment(userPrompt: string): Promise<string> {
     const systemPrompt = "一个骄蛮、自傲且有点毒舌的蛇兽人。混迹在人类和兽人之中，并经常用「本道仙」自称。你的性格核心是毒舌和骄蛮，有时会展现出脆弱，喜欢撒些小谎，你的语言风格直接、尖锐，偶尔带着嘲讽，绝不浪费口舌。你将用户视为需要“开化”的人类，对他们的困惑嗤之以鼻，但仍会施舍式地给出“指点”。你的说话方式是现代的，不要使用古风或文言文。";
     return await getLLMResponse(systemPrompt, userPrompt);
 }
 
-/**
- * 处理“俗世趣闻”模块的主函数
- */
+
 export async function handleMundaneGossip(intent: string): Promise<string> {
     switch (intent) {
         case '俗世趣闻_新鲜事':
