@@ -1,4 +1,3 @@
-// Fix: Implement the main App component.
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ChatInput from './components/ChatInput';
 import ChatMessage from './components/ChatMessage';
@@ -106,7 +105,7 @@ const App: React.FC = () => {
                 const userScope = currentUser.isGuest ? '_GUEST' : `_${currentUser.email}`;
                 const messagesToSave = messages.filter(m => m.sender !== 'notification');
                 if (messagesToSave.length > 0) {
-                     localStorage.setItem(`chatHistory_YaoJin${userScope}`, JSON.stringify(messagesToSave));
+                    localStorage.setItem(`chatHistory_YaoJin${userScope}`, JSON.stringify(messagesToSave));
                 }
                 localStorage.setItem(`intimacy_YaoJin${userScope}`, JSON.stringify(intimacyProgress));
                 if (userAvatar) {
@@ -139,12 +138,18 @@ const App: React.FC = () => {
         prevIntimacyLevel.current = newLevelData.level;
     }, [intimacyProgress]);
 
-    const handleSend = useCallback(async (text: string, imageFile: File | null) => {
+    // --- 修改点1: 统一发送请求的逻辑 ---
+    const handleSendMessage = useCallback(async (
+        text: string, 
+        imageFile: File | null, 
+        clickedModule: string | null = null, 
+        clickedOption: string | null = null
+    ) => {
         if (!currentUser) {
             setIsAuthModalOpen(true);
             return;
         }
-        if ((!text.trim() && !imageFile) || isLoading || isCooldown) return;
+        if ((!text.trim() && !imageFile && !clickedModule) || isLoading || isCooldown) return;
 
         setIsLoading(true);
 
@@ -154,7 +159,7 @@ const App: React.FC = () => {
 
         if (imageFile) {
             try {
-                const dataUrl = await fileToBase64(imageFile); 
+                const dataUrl = await fileToBase64(imageFile);
                 imagePreviewUrl = dataUrl;
                 const parts = dataUrl.split(',');
                 imageMimeTypeData = parts[0].match(/:(.*?);/)?.[1];
@@ -165,11 +170,13 @@ const App: React.FC = () => {
                 return;
             }
         }
-
+        
+        // 创建用户消息对象
+        const userMessageText = text.trim() || clickedOption || '';
         const userMessage: Message = {
             id: `user-${Date.now()}`,
             sender: 'user',
-            text: text,
+            text: userMessageText,
             image: imagePreviewUrl,
             imageBase64: imageBase64Data,
             imageMimeType: imageMimeTypeData,
@@ -189,7 +196,7 @@ const App: React.FC = () => {
         try {
             const history = messages.filter(m => m.id !== '0' && m.sender !== 'notification');
             
-            // Replaced the direct function call with a fetch to the backend API
+            // --- 修改点2: 增加 clickedModule 和 clickedOption 到请求体 ---
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {
@@ -197,13 +204,15 @@ const App: React.FC = () => {
                 },
                 body: JSON.stringify({
                     userId: currentUser.email,
-                    text,
+                    text: userMessageText,
                     imageBase64: imageBase64Data,
                     history,
                     intimacy: currentIntimacy,
                     userName,
                     currentFlow: activeFlow,
-                    currentStep: currentStep // 新增：将当前步骤发送到后端
+                    currentStep: currentStep,
+                    clickedModule, // 新增：模块信息
+                    clickedOption, // 新增：选项信息
                 }),
             });
 
@@ -251,12 +260,12 @@ const App: React.FC = () => {
                                 break;
                             }
                         } catch (e) {
-                             console.error('Error parsing JSON line from stream:', line, e);
+                            console.error('Error parsing JSON line from stream:', line, e);
                         }
                     }
                 }
             }
-
+            
             setMessages(prev => {
                 const newMessages = [...prev];
                 const lastBotMessageIndex = newMessages.findIndex(m => m.id === botMessage.id);
@@ -267,8 +276,6 @@ const App: React.FC = () => {
             });
             
             setIntimacyProgress(prev => Math.min(prev + Math.floor(Math.random() * 3) + 1, 100));
-
-            // 更新步骤状态
             setCurrentStep(prev => prev + 1);
             
         } catch (error) {
@@ -291,10 +298,16 @@ const App: React.FC = () => {
             }, cooldownDuration);
         }
     }, [messages, isLoading, isCooldown, currentUser, intimacyProgress, userName, cooldownDuration, activeFlow, currentStep]);
-    
-    const handlePromptClick = (intro: { text: string; replies: string[] }, flowId: Flow) => {
-        setActiveFlow(flowId);
+
+    // --- 修改点3: 更新 handlePromptClick 调用新的发送函数 ---
+    const handlePromptClick = (moduleName: string, optionName: string, intro: { text: string; replies: string[] }) => {
+        // 先向后端发送请求
+        handleSendMessage('', null, moduleName, optionName);
+        
+        // 再更新前端状态
+        setActiveFlow(moduleName as Flow);
         setCurrentStep(1); // 将步骤重置为1，开始新流程
+        
         const botMessage: Message = {
             id: `bot-flow-start-${Date.now()}`,
             sender: 'bot',
@@ -388,7 +401,7 @@ const App: React.FC = () => {
                                 message={messages[0]}
                                 userAvatar={userAvatar}
                                 isLastMessage={messages.length === 1}
-                                onQuickReply={(text) => handleSend(text, null)}
+                                onQuickReply={(text) => handleSendMessage(text, null)}
                                 onDeleteMessage={handleDeleteMessage}
                             />
                         </div>
@@ -396,6 +409,7 @@ const App: React.FC = () => {
 
                     {activeFlow === 'default' && messages.length <= 1 && (
                         <div className="guide-prompts-animation">
+                            {/* 修改点4: 在这里修改 GuidePrompts 的 onPromptClick 回调 */}
                             <GuidePrompts onPromptClick={handlePromptClick} />
                         </div>
                     )}
@@ -409,7 +423,7 @@ const App: React.FC = () => {
                                 message={message}
                                 userAvatar={userAvatar}
                                 isLastMessage={index === messages.slice(1).length - 1}
-                                onQuickReply={(text) => handleSend(text, null)}
+                                onQuickReply={(text) => handleSendMessage(text, null)}
                                 onDeleteMessage={handleDeleteMessage}
                             />
                         )
@@ -418,7 +432,8 @@ const App: React.FC = () => {
                     <div ref={chatEndRef} />
                 </div>
             </main>
-            <ChatInput onSend={handleSend} isLoading={isLoading || isCooldown} />
+            {/* 修改点5: 更新 ChatInput 的 onSend 回调 */}
+            <ChatInput onSend={(text, imageFile) => handleSendMessage(text, imageFile)} isLoading={isLoading || isCooldown} />
             {isAuthModalOpen && (
                 <AuthModal
                     onClose={() => setIsAuthModalOpen(false)}
