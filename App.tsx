@@ -1,3 +1,4 @@
+// Fix: Implement the main App component.
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ChatInput from './components/ChatInput';
 import ChatMessage from './components/ChatMessage';
@@ -10,6 +11,7 @@ import AvatarSelectionModal from './components/AvatarSelectionModal';
 import { Message, IntimacyLevel, User, Flow } from './types';
 import { fileToBase64 } from './services/geminiService';
 import { getCurrentUser, logout } from './services/authService';
+import { prompts } from './components/GuidePrompts'; // 导入 GuidePrompts 中的 prompts
 
 const INTIMACY_LEVELS = [
     { level: 1, name: '渡劫道友', min: 0 },
@@ -48,13 +50,12 @@ const App: React.FC = () => {
     const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
     const [intimacyProgress, setIntimacyProgress] = useState(0);
     const [activeFlow, setActiveFlow] = useState<Flow>('default');
-    const [currentStep, setCurrentStep] = useState(0); // 新增：跟踪当前步骤
+    const [currentStep, setCurrentStep] = useState(0);
 
     const chatEndRef = useRef<HTMLDivElement>(null);
     const currentIntimacy = getIntimacyFromProgress(intimacyProgress);
     const userName = currentUser?.username || '道友';
 
-    // On initial mount, check if there's a logged-in user session
     useEffect(() => {
         const user = getCurrentUser();
         if (user) {
@@ -62,7 +63,6 @@ const App: React.FC = () => {
         }
     }, []);
 
-    // Cleanup timeout on component unmount
     useEffect(() => {
         return () => {
             if (cooldownTimeoutRef.current) {
@@ -72,7 +72,6 @@ const App: React.FC = () => {
     }, []);
 
 
-    // Load data from local storage whenever the current user changes (login, logout, guest)
     useEffect(() => {
         try {
             if (currentUser) {
@@ -84,9 +83,8 @@ const App: React.FC = () => {
                 setMessages(savedMessages ? JSON.parse(savedMessages) : [INITIAL_MESSAGE]);
                 setIntimacyProgress(savedIntimacy ? JSON.parse(savedIntimacy) : 0);
                 setUserAvatar(savedUserAvatar ? JSON.parse(savedUserAvatar) : DEFAULT_USER_AVATAR);
-                setActiveFlow('default'); // Reset flow on user change
+                setActiveFlow('default');
             } else {
-                 // If no user, reset to initial state
                 setMessages([INITIAL_MESSAGE]);
                 setIntimacyProgress(0);
                 setUserAvatar(DEFAULT_USER_AVATAR);
@@ -98,7 +96,6 @@ const App: React.FC = () => {
         }
     }, [currentUser]);
 
-    // Save data to local storage on data change, but only for the default flow
     useEffect(() => {
         try {
             if (currentUser && activeFlow === 'default') {
@@ -113,7 +110,7 @@ const App: React.FC = () => {
                 }
             }
         } catch (error) {
-             console.error("Failed to save to local storage", error);
+            console.error("Failed to save to local storage", error);
         }
     }, [messages, intimacyProgress, userAvatar, currentUser, activeFlow]);
 
@@ -122,7 +119,6 @@ const App: React.FC = () => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages.length]);
 
-    // Effect to show intimacy level-up notification
     const prevIntimacyLevel = useRef(currentIntimacy.level);
     useEffect(() => {
         const newLevelData = getIntimacyFromProgress(intimacyProgress);
@@ -138,7 +134,7 @@ const App: React.FC = () => {
         prevIntimacyLevel.current = newLevelData.level;
     }, [intimacyProgress]);
 
-    // --- 修改点1: 统一发送请求的逻辑 ---
+    // --- 核心改动: 统一发送函数 ---
     const handleSendMessage = useCallback(async (
         text: string, 
         imageFile: File | null, 
@@ -171,7 +167,6 @@ const App: React.FC = () => {
             }
         }
         
-        // 创建用户消息对象
         const userMessageText = text.trim() || clickedOption || '';
         const userMessage: Message = {
             id: `user-${Date.now()}`,
@@ -196,7 +191,6 @@ const App: React.FC = () => {
         try {
             const history = messages.filter(m => m.id !== '0' && m.sender !== 'notification');
             
-            // --- 修改点2: 增加 clickedModule 和 clickedOption 到请求体 ---
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {
@@ -211,8 +205,8 @@ const App: React.FC = () => {
                     userName,
                     currentFlow: activeFlow,
                     currentStep: currentStep,
-                    clickedModule, // 新增：模块信息
-                    clickedOption, // 新增：选项信息
+                    clickedModule,
+                    clickedOption,
                 }),
             });
 
@@ -299,22 +293,40 @@ const App: React.FC = () => {
         }
     }, [messages, isLoading, isCooldown, currentUser, intimacyProgress, userName, cooldownDuration, activeFlow, currentStep]);
 
-    // --- 修改点3: 更新 handlePromptClick 调用新的发送函数 ---
-    const handlePromptClick = (moduleName: string, optionName: string, intro: { text: string; replies: string[] }) => {
-        // 先向后端发送请求
-        handleSendMessage('', null, moduleName, optionName);
-        
-        // 再更新前端状态
-        setActiveFlow(moduleName as Flow);
-        setCurrentStep(1); // 将步骤重置为1，开始新流程
-        
+    // --- 修改点1: 新增 handleModuleClick 函数来处理大模块点击 ---
+    const handleModuleClick = (moduleName: Flow) => {
+        const selectedPrompt = prompts.find(p => p.id === moduleName);
+        if (!selectedPrompt) return;
+
+        setActiveFlow(moduleName);
+        setCurrentStep(1);
+
         const botMessage: Message = {
             id: `bot-flow-start-${Date.now()}`,
             sender: 'bot',
-            text: intro.text,
-            quickReplies: intro.replies,
+            text: selectedPrompt.intro.text,
+            quickReplies: selectedPrompt.intro.replies,
         };
-        setMessages([botMessage]);
+        setMessages(prev => [...prev, botMessage]);
+    };
+
+    // --- 修改点2: 新增 handleQuickReplyClick 函数来处理子选项点击 ---
+    const handleQuickReplyClick = (replyText: string) => {
+        // 使用 activeFlow 来确定模块ID
+        const moduleName = activeFlow;
+        const optionName = replyText;
+
+        // 向后端发送请求
+        handleSendMessage('', null, moduleName, optionName);
+
+        // 更新前端状态以显示用户消息
+        const userMessage: Message = {
+            id: `user-${Date.now()}`,
+            sender: 'user',
+            text: optionName,
+            intimacy: currentIntimacy,
+        };
+        setMessages(prev => [...prev, userMessage]);
     };
 
     const handleDeleteMessage = useCallback((id: string) => {
@@ -336,7 +348,7 @@ const App: React.FC = () => {
              setMessages([INITIAL_MESSAGE]);
         }
         setActiveFlow('default');
-        setCurrentStep(0); // 重置步骤
+        setCurrentStep(0);
         setIsNewConversationModalOpen(false);
     };
 
@@ -351,7 +363,7 @@ const App: React.FC = () => {
         setIntimacyProgress(0);
         setUserAvatar(DEFAULT_USER_AVATAR);
         setActiveFlow('default');
-        setCurrentStep(0); // 重置步骤
+        setCurrentStep(0);
         if(currentUser?.isGuest) {
             setCurrentUser(null);
         }
@@ -401,7 +413,7 @@ const App: React.FC = () => {
                                 message={messages[0]}
                                 userAvatar={userAvatar}
                                 isLastMessage={messages.length === 1}
-                                onQuickReply={(text) => handleSendMessage(text, null)}
+                                onQuickReply={handleQuickReplyClick} // 使用新的 quickReply handler
                                 onDeleteMessage={handleDeleteMessage}
                             />
                         </div>
@@ -409,8 +421,7 @@ const App: React.FC = () => {
 
                     {activeFlow === 'default' && messages.length <= 1 && (
                         <div className="guide-prompts-animation">
-                            {/* 修改点4: 在这里修改 GuidePrompts 的 onPromptClick 回调 */}
-                            <GuidePrompts onPromptClick={handlePromptClick} />
+                            <GuidePrompts onPromptClick={handleModuleClick} /> {/* 使用新的 module handler */}
                         </div>
                     )}
 
@@ -423,7 +434,7 @@ const App: React.FC = () => {
                                 message={message}
                                 userAvatar={userAvatar}
                                 isLastMessage={index === messages.slice(1).length - 1}
-                                onQuickReply={(text) => handleSendMessage(text, null)}
+                                onQuickReply={handleQuickReplyClick} // 使用新的 quickReply handler
                                 onDeleteMessage={handleDeleteMessage}
                             />
                         )
@@ -432,7 +443,6 @@ const App: React.FC = () => {
                     <div ref={chatEndRef} />
                 </div>
             </main>
-            {/* 修改点5: 更新 ChatInput 的 onSend 回调 */}
             <ChatInput onSend={(text, imageFile) => handleSendMessage(text, imageFile)} isLoading={isLoading || isCooldown} />
             {isAuthModalOpen && (
                 <AuthModal
