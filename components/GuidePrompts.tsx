@@ -1,7 +1,20 @@
+// 文件: components/GuidePrompts.tsx
+
 import React from 'react';
 import { Flow } from '../types';
 
-const prompts = [
+export interface PromptItem {
+  id: Flow;
+  title: string;
+  description: string;
+  icon: JSX.Element;
+  intro: {
+    text: string;
+    replies: string[];
+  };
+}
+
+const prompts: PromptItem[] = [
   {
     id: 'news' as Flow,
     title: '俗世趣闻',
@@ -39,7 +52,7 @@ const prompts = [
              <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
         </svg>
     ),
-     intro: {
+      intro: {
       text: '行吧，满足你这点可怜的好奇心。说吧，想从哪开始窥探本道仙的秘密？',
       replies: ['最近看了...', '随便聊聊…', '我的记仇小本本', '最近买了...']
     }
@@ -60,13 +73,9 @@ const prompts = [
   }
 ];
 
-interface IntroData {
-  text: string;
-  replies: string[];
-}
-
 interface GuidePromptsProps {
-  onPromptClick: (intro: IntroData, flowId: Flow) => void;
+  // onPromptClick 现在只传递大模块的 id，而不是 intro
+  onPromptClick: (promptId: Flow) => void; 
 }
 
 const GuidePrompts: React.FC<GuidePromptsProps> = ({ onPromptClick }) => {
@@ -77,7 +86,8 @@ const GuidePrompts: React.FC<GuidePromptsProps> = ({ onPromptClick }) => {
           <div
             key={prompt.id}
             className="group flex items-center bg-white/60 p-4 rounded-lg border border-white/50 hover:border-white hover:bg-white/80 transition-all duration-300 cursor-pointer transform hover:-translate-y-1 shadow-md hover:shadow-lg backdrop-blur-sm"
-            onClick={() => onPromptClick(prompt.intro, prompt.id)}
+            // 当点击时，只传递 prompt 的 id
+            onClick={() => onPromptClick(prompt.id)}
           >
             <div className="flex-shrink-0 flex items-center justify-center h-12 w-12 bg-white/50 rounded-lg mr-5 border border-white/30 group-hover:bg-white transition-all duration-300">
                 {prompt.icon}
@@ -94,3 +104,5 @@ const GuidePrompts: React.FC<GuidePromptsProps> = ({ onPromptClick }) => {
 };
 
 export default GuidePrompts;
+
+export { prompts };
