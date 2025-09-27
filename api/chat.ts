@@ -1,279 +1,109 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+// 文件: services/mundaneGossipService.ts
+import * as character from '../core/characterSheet.js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { withApiHandler } from '../lib/apiHandler.js';
-import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
-import { handleFortuneTelling } from '../services/fortuneTellingService.js';
-import { handleGame } from '../services/gameService.js';
-import { handleMundaneGossip } from '../services/mundaneGossipService.js';
-import { handleGeneralChat } from '../services/chatService.js';
-import { Message, IntimacyLevel } from '../types/index.js';
-import * as character from '../core/characterSheet.js';
+import { fetchWeiboNewsLogic } from '../lib/weibo.js';
+import { fetchDoubanMoviesLogic } from '../lib/douban.js';
+import { getLLMResponse } from '../lib/llm.js';
 
-// --- 配置常量 ---
-const API_URL = 'https://api.bltcy.ai';
-const API_KEY = process.env.BLTCY_API_KEY;
+const fantasyStoryPath = path.join(process.cwd(), 'data', '小道仙的幻想.json');
+const fantasyStories: { content: string }[] = JSON.parse(fs.readFileSync(fantasyStoryPath, 'utf-8'));
 
-if (!API_KEY) {
-  throw new Error('BLTCY_API_KEY environment variable is not configured.');
-}
-
-// --- 通用 API 调用 ---
-async function streamApiCall(path: string, payload: any): Promise<Response> {
-  try {
-    const response = await fetch(`${API_URL}${path}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
-        'Accept': 'application/json',
-        'User-Agent': 'DMXAPI/1.0.0 (https://api.bltcy.ai)'
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      throw new Error(`API request failed with status ${response.status}`);
+/**
+ * 获取并以“总结+点评”的形式回应微博热搜
+ */
+async function getWeiboTrends(): Promise<string> {
+    console.log('[mundaneGossipService] 正在获取微博热搜...');
+    const trends = await fetchWeiboNewsLogic();
+    if (!trends || trends.length === 0) {
+        console.log('[mundaneGossipService] 微博热搜数据为空。');
+        return "哼，今天微博没啥新鲜事，人类的八卦果然经不起本道仙的法眼。";
     }
-    return response;
-  } catch (err) {
-    console.error(`[streamApiCall] 调用异常:`, err);
-    throw err;
-  }
-}
+    console.log(`[mundaneGossipService] 成功获取 ${trends.length} 条微博热搜。`);
+    const trendsForLLM = trends.slice(0, 10).map(item => item.title);
 
-// --- 意图识别引擎 ---
-const trainingCorpusPath = path.join(process.cwd(), 'data', 'training_corpus.json');
-const trainingData = JSON.parse(fs.readFileSync(trainingCorpusPath, 'utf-8'));
+    // --- 核心修改：调整 Prompt 指令 ---
+    const userPrompt = `
+# 任务
+请以尧金的口吻，将以下热搜列表整合成一段流畅的、充满尧金风格的评论。
+评论内容需要同时包含对事件的简要概括和毒舌、讽刺的点评。
+在你的回答中，严格遵守以下标点符号使用规则：
+- **只使用双引号 " " 来标记特定词语或标题。**
+- **不要使用星号 * 或单引号 ' 来强调或标记任何内容。**
+- 保持标点符号风格的统一。
 
-async function runTriage(userInput: string): Promise<{ intent: string, context?: any }> {
-  const triagePrompt = `
-# 指令
-你是一个对话分流助手。你的任务是根据用户的输入，严格匹配以下规则中的一种，并仅输出与该情况对应的JSON对象。不得有任何额外文字、解释或代码块。
+# 原始热搜列表
+${JSON.stringify(trendsForLLM)}
 
-# 意图识别规则
-请严格按照以下JSON数组中的规则进行判断：
-\`\`\`json
-${JSON.stringify(trainingData, null, 2)}
-\`\`\`
-
-# 用户输入
-"${userInput}"
-
-# 你的输出 (必须是以下JSON对象之一):
-{ "intent": "匹配到的意图名称", "context": "可能存在的实体或额外信息" }
+# 你的评论：
 `;
-  try {
-    const response = await streamApiCall('/v1/chat/completions', {
-      model: 'gemini-2.5-flash',
-      messages: [{ role: 'user', content: triagePrompt }],
-      stream: false,
-    });
-    const result = await response.json();
-    const responseText = result.choices?.[0]?.message?.content?.trim();
-    if (responseText) {
-      const cleaned = responseText.replace(/^\s*```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1').trim();
-      const triageResult = JSON.parse(cleaned);
-      if (triageResult && typeof triageResult === 'object' && triageResult.intent) {
-        return triageResult;
-      }
+    return await callLLMForComment(userPrompt);
+}
+
+async function getDoubanMovies(): Promise<string> {
+    console.log('[mundaneGossipService] 正在获取豆瓣电影榜单...');
+    const movies = await fetchDoubanMoviesLogic();
+    if (!movies || movies.length === 0) {
+        console.log('[mundaneGossipService] 豆瓣电影数据为空。');
+        return "哼，最近的电影都无聊透顶，本道仙都懒得看。";
     }
-  } catch (e) {
-    console.error(`[runTriage] 意图分流失败:`, e);
-  }
-  return { intent: '闲聊' };
+    console.log(`[mundaneGossipService] 成功获取 ${movies.length} 部豆瓣电影。`);
+    const moviesForLLM = movies.slice(0, 5).map((movie: any) => `《${movie.title}》 评分：${movie.score}`);
+    
+    // --- 核心修改：调整 Prompt 指令 ---
+    const userPrompt = `
+# 任务
+请以尧金的口吻，将以下电影列表整合成一段流畅的、充满尧金风格的评论。
+评论内容需要同时包含对电影的简要概括和毒舌、讽刺的点评。
+在你的回答中，严格遵守以下标点符号使用规则：
+- **只使用双引号 " " 来标记特定词语或标题。**
+- **不要使用星号 * 或单引号 ' 来强调或标记任何内容。**
+- 保持标点符号风格的统一。
+
+# 原始电影列表
+${JSON.stringify(moviesForLLM)}
+
+# 你的评论：
+`;
+    return await callLLMForComment(userPrompt);
 }
 
-// --- 意图映射函数（新增）---
-function mapClickedIntent(module: string, option: string): string | null {
-    const intentMap: { [key: string]: string } = {
-        'news_新鲜事': '俗世趣闻_新鲜事',
-        'news_上映新片': '俗世趣闻_上映新片',
-        'news_小道仙的幻想': '俗世趣闻_小道仙的幻想',
-        'guidance_今日运势': '仙人指路_今日运势',
-        'guidance_塔罗启示': '仙人指路_塔罗启示',
-        'guidance_正缘桃花': '仙人指路_正缘桃花',
-        'guidance_事业罗盘': '仙人指路_事业罗盘',
-        'daily_最近看了...': '道仙日常_最近看了', // 修改为与前端完全匹配
-        'daily_最近买了...': '道仙日常_最近买了',
-        'daily_我的记仇小本本': '道仙日常_记仇小本本',
-        'daily_随便聊聊...': '道仙日常_随便聊聊',
-        'game_你说我画': '游戏小摊_你说我画',
-        'game_真心话大冒险': '游戏小摊_真心话大冒险',
-        'game_故事接龙': '游戏小摊_故事接龙',
-    };
-
-    const key = `${module}_${option}`;
-    return intentMap[key] || null;
+async function getFantasyStory(): Promise<string> {
+    console.log('[mundaneGossipService] 正在获取小道仙的幻想故事。');
+    const story = fantasyStories[Math.floor(Math.random() * fantasyStories.length)];
+    console.log('[mundaneGossipService] 成功获取幻想故事。');
+    return story.content;
 }
 
-// --- 主逻辑与核心路由器 ---
-async function* sendMessageStream(
-  userInput: string,
-  imageBase64: string | null,
-  history: Message[],
-  intimacy: IntimacyLevel,
-  userName: string,
-  triageResult: { intent: string, context?: any },
-  currentStep?: number
-): AsyncGenerator<Partial<Message>> {
-  const { intent } = triageResult;
-
-  // ==== 图片解析分支 (最高优先级) ====
-  if (imageBase64) {
-    yield { text: "本道仙正为你凝视这张图片...", isLoading: true };
-    const response = await streamApiCall('/v1/images/analysis', {
-      model: "gemini-2.5-flash",
-      image: imageBase64,
-      prompt: "请用道仙的风格，分析并评论这张图片内容。",
-    });
-    const result = await response.json();
-    const analysisText = result?.data?.[0]?.content || "图片解析失败，请稍后重试。";
-    yield { text: analysisText, isLoading: false };
-    return;
-  }
-
-  // ==== 意图分发 ====
-  let responseText: string | null = null;
-  switch (intent) {
-    case '俗世趣闻_新鲜事':
-    case '俗世趣闻_上映新片':
-    case '俗世趣闻_小道仙的幻想':
-      responseText = await handleMundaneGossip(intent);
-      break;
-    case '道仙日常_最近看了':
-    case '道仙日常_最近买了':
-    case '道仙日常_记仇小本本':
-    case '道仙日常_随便聊聊':
-      responseText = await handleDaoistDailyChoice(intent);
-      break;
-    case '游戏小摊_你说我画':
-    case '游戏小摊_真心话大冒险':
-    case '游戏小摊_故事接龙':
-      responseText = await handleGame(intent, userInput, currentStep);
-      break;
-    case '仙人指路_今日运势':
-    case '仙人指路_塔罗启示':
-    case '仙人指路_正缘桃花':
-    case '仙人指路_事业罗盘':
-    case '仙人指路_窥探因果':
-    case '仙人指路_综合占卜':
-      responseText = await handleFortuneTelling(intent, userInput, currentStep);
-      break;
-    case '通用问题_二选一':
-    case '通用问题_懒人思维':
-    case '通用问题_嘲讽拒绝':
-    case '通用问题_浪费时间':
-      responseText = await handleGeneralChat(intent, userInput);
-      break;
-    default: // 情感类和闲聊
-      const systemInstruction = getSystemInstruction(intimacy, userName);
-      const apiMessages = convertToApiMessages(history, systemInstruction, userInput);
-      const response = await streamApiCall('/v1/chat/completions', {
-        model: 'gemini-2.5-flash',
-        messages: apiMessages,
-        stream: true,
-      });
-      const reader = response.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        while (buffer.includes('\n')) {
-          let idx = buffer.indexOf('\n');
-          let line = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + 1);
-          if (line.startsWith('data: ')) {
-            const dataLine = line.slice(6).trim();
-            if (dataLine === '[DONE]') break;
-            const data = JSON.parse(dataLine);
-            const textDelta = data.choices?.[0]?.delta?.content || '';
-            if (textDelta) {
-              yield { text: textDelta, isLoading: true };
-            }
-          }
-        }
-      }
-      break;
-  }
-
-  if (responseText) {
-    yield { text: responseText, isLoading: false };
-  }
-
-  yield { isLoading: false };
-}
-
-// --- 辅助: 构造 system 指令 ---
-const getSystemInstruction = (intimacy: IntimacyLevel, userName: string): string => {
-  let instruction = `你是${character.persona.name}，${character.persona.description}
+async function callLLMForComment(userPrompt: string): Promise<string> {
+    const systemPrompt = `你是${character.persona.name}，${character.persona.description}
 你的语言和行为必须严格遵守以下规则：
 - 核心人设: ${character.persona.description}
 - 亲密度规则: ${character.persona.intimacyRules}
-- 当前用户信息:
-  - 用户昵称：${userName}
-  - 你们的亲密度等级：${intimacy.level} (${intimacy.name})
-  - 亲密度进度：${intimacy.progress}%
+- 你的说话方式是现代的，不要使用古风或文言文。
 `;
-  return instruction;
-};
-
-// --- 修正版消息格式构造 ---
-const convertToApiMessages = (
-  history: Message[],
-  systemInstruction: string,
-  text: string
-) => {
-  const apiMessages: any[] = [{ role: 'system', content: systemInstruction }];
-  history.forEach(msg => {
-    if (msg.text) {
-      const role = msg.sender === 'user' ? 'user' : 'assistant';
-      apiMessages.push({ role, content: msg.text });
+    console.log('[mundaneGossipService] 正在调用大模型生成评论...');
+    try {
+        const response = await getLLMResponse(systemPrompt, userPrompt);
+        console.log('[mundaneGossipService] 成功获取大模型响应。');
+        return response;
+    } catch (error) {
+        console.error('[mundaneGossipService] 大模型调用失败:', error);
+        throw error;
     }
-  });
-  if (text) {
-    apiMessages.push({ role: 'user', content: text });
-  }
-  return apiMessages;
-};
+}
 
-// Vercel/Next.js 路由处理器
-export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelResponse) => {
-  const { text, imageBase64, history, intimacy, userName, currentStep, clickedModule, clickedOption } = req.body;
-  
-  console.log('[API] 接收到请求，模块:', clickedModule, '选项:', clickedOption, '文本:', text);
-
-  if (!text && !imageBase64 && !clickedModule) {
-    res.status(400).json({ error: 'Text, image, or module selection is required' });
-    return;
-  }
-  
-  let triageResult = { intent: '闲聊' };
-
-  if (clickedModule && clickedOption) {
-    const mappedIntent = mapClickedIntent(clickedModule, clickedOption);
-    if (mappedIntent) {
-        triageResult.intent = mappedIntent;
-        console.log(`[API] 检测到点击事件，映射意图为: ${triageResult.intent}`);
-    } else {
-        console.warn(`[API] 意图映射失败：${clickedModule}_${clickedOption}`);
+export async function handleMundaneGossip(intent: string): Promise<string> {
+    console.log(`[mundaneGossipService] 意图分发：${intent}`);
+    switch (intent) {
+        case '俗世趣闻_新鲜事':
+            return getWeiboTrends();
+        case '俗世趣闻_上映新片':
+            return getDoubanMovies();
+        case '俗世趣闻_小道仙的幻想':
+            return getFantasyStory();
+        default:
+            console.log(`[mundaneGossipService] 意图未识别，返回默认响应。`);
+            return "哼，你的问题超出了本道仙的业务范围，换个问题吧。";
     }
-  } else {
-    triageResult = await runTriage(text);
-    console.log(`[API] 文本分流结果:`, triageResult.intent);
-  }
-
-  res.writeHead(200, {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Transfer-Encoding': 'chunked',
-      'Cache-Control': 'no-cache',
-  });
-
-  let chunkIdx = 0;
-  for await (const chunk of sendMessageStream(text, imageBase64, history, intimacy, userName, triageResult, currentStep)) {
-    res.write(JSON.stringify({ ...chunk, flow: triageResult.intent }) + '\n');
-    chunkIdx++;
-  }
-  res.end();
-});
+}
