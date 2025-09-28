@@ -311,9 +311,10 @@ const App: React.FC = () => {
 
     const handleQuickReplyClick = (replyText: string) => {
         const userMessageText = replyText.trim();
-        const newStep = currentStep;
+        const newStep = 1;
         
         handleSendMessage(userMessageText, null, activeFlow, userMessageText, newStep);
+        setCurrentStep(newStep);
     };
 
     const handleDeleteMessage = useCallback((id: string) => {
