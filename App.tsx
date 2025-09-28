@@ -1,4 +1,5 @@
-// Fix: Implement the main App component.
+// 文件: App.tsx
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ChatInput from './components/ChatInput';
 import ChatMessage from './components/ChatMessage';
@@ -11,7 +12,7 @@ import AvatarSelectionModal from './components/AvatarSelectionModal';
 import { Message, IntimacyLevel, User, Flow } from './types';
 import { fileToBase64 } from './services/geminiService';
 import { getCurrentUser, logout } from './services/authService';
-import { prompts } from './components/GuidePrompts'; // 导入 GuidePrompts 中的 prompts
+import { prompts } from './components/GuidePrompts';
 
 const INTIMACY_LEVELS = [
     { level: 1, name: '渡劫道友', min: 0 },
@@ -70,7 +71,6 @@ const App: React.FC = () => {
             }
         };
     }, []);
-
 
     useEffect(() => {
         try {
@@ -134,11 +134,10 @@ const App: React.FC = () => {
         prevIntimacyLevel.current = newLevelData.level;
     }, [intimacyProgress]);
 
-    // --- 核心改动: 统一发送函数 ---
     const handleSendMessage = useCallback(async (
-        text: string, 
-        imageFile: File | null, 
-        clickedModule: string | null = null, 
+        text: string,
+        imageFile: File | null,
+        clickedModule: string | null = null,
         clickedOption: string | null = null
     ) => {
         if (!currentUser) {
@@ -166,7 +165,7 @@ const App: React.FC = () => {
                 return;
             }
         }
-        
+
         const userMessageText = text.trim() || clickedOption || '';
         const userMessage: Message = {
             id: `user-${Date.now()}`,
@@ -190,7 +189,7 @@ const App: React.FC = () => {
 
         try {
             const history = messages.filter(m => m.id !== '0' && m.sender !== 'notification');
-            
+
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {
@@ -217,19 +216,19 @@ const App: React.FC = () => {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let accumulatedText = '';
-            
+
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                
+
                 const chunkString = decoder.decode(value, { stream: true });
                 const lines = chunkString.split('\n');
-                
+
                 for (const line of lines) {
                     if (line.trim()) {
                         try {
                             const chunk = JSON.parse(line);
-                            
+
                             if (chunk.text) {
                                 accumulatedText += chunk.text;
                             }
@@ -237,7 +236,7 @@ const App: React.FC = () => {
                             setMessages(prev => {
                                 const newMessages = [...prev];
                                 const lastBotMessageIndex = newMessages.findIndex(m => m.id === botMessage.id);
-                                
+
                                 if (lastBotMessageIndex !== -1) {
                                     newMessages[lastBotMessageIndex] = {
                                         ...newMessages[lastBotMessageIndex],
@@ -259,7 +258,7 @@ const App: React.FC = () => {
                     }
                 }
             }
-            
+
             setMessages(prev => {
                 const newMessages = [...prev];
                 const lastBotMessageIndex = newMessages.findIndex(m => m.id === botMessage.id);
@@ -268,10 +267,10 @@ const App: React.FC = () => {
                 }
                 return newMessages;
             });
-            
+
             setIntimacyProgress(prev => Math.min(prev + Math.floor(Math.random() * 3) + 1, 100));
             setCurrentStep(prev => prev + 1);
-            
+
         } catch (error) {
             console.error('Error sending message:', error);
             const errorMessage: Message = {
@@ -293,7 +292,6 @@ const App: React.FC = () => {
         }
     }, [messages, isLoading, isCooldown, currentUser, intimacyProgress, userName, cooldownDuration, activeFlow, currentStep]);
 
-    // --- 修改点1: 新增 handleModuleClick 函数来处理大模块点击 ---
     const handleModuleClick = (moduleName: Flow) => {
         const selectedPrompt = prompts.find(p => p.id === moduleName);
         if (!selectedPrompt) return;
@@ -310,23 +308,18 @@ const App: React.FC = () => {
         setMessages(prev => [...prev, botMessage]);
     };
 
-    // --- 修改点2: 新增 handleQuickReplyClick 函数来处理子选项点击 ---
     const handleQuickReplyClick = (replyText: string) => {
-        // 使用 activeFlow 来确定模块ID
-        const moduleName = activeFlow;
-        const optionName = replyText;
-
-        // 向后端发送请求
-        handleSendMessage('', null, moduleName, optionName);
-
-        // 更新前端状态以显示用户消息
+        const userMessageText = replyText.trim();
         const userMessage: Message = {
             id: `user-${Date.now()}`,
             sender: 'user',
-            text: optionName,
+            text: userMessageText,
             intimacy: currentIntimacy,
         };
         setMessages(prev => [...prev, userMessage]);
+
+        // 【修改点: 调用 handleSendMessage，并传递当前状态】
+        handleSendMessage(userMessageText, null, activeFlow, userMessageText);
     };
 
     const handleDeleteMessage = useCallback((id: string) => {
@@ -413,7 +406,7 @@ const App: React.FC = () => {
                                 message={messages[0]}
                                 userAvatar={userAvatar}
                                 isLastMessage={messages.length === 1}
-                                onQuickReply={handleQuickReplyClick} // 使用新的 quickReply handler
+                                onQuickReply={handleQuickReplyClick}
                                 onDeleteMessage={handleDeleteMessage}
                             />
                         </div>
@@ -421,7 +414,7 @@ const App: React.FC = () => {
 
                     {activeFlow === 'default' && messages.length <= 1 && (
                         <div className="guide-prompts-animation">
-                            <GuidePrompts onPromptClick={handleModuleClick} /> {/* 使用新的 module handler */}
+                            <GuidePrompts onPromptClick={handleModuleClick} />
                         </div>
                     )}
 
@@ -434,7 +427,7 @@ const App: React.FC = () => {
                                 message={message}
                                 userAvatar={userAvatar}
                                 isLastMessage={index === messages.slice(1).length - 1}
-                                onQuickReply={handleQuickReplyClick} // 使用新的 quickReply handler
+                                onQuickReply={handleQuickReplyClick}
                                 onDeleteMessage={handleDeleteMessage}
                             />
                         )
