@@ -138,7 +138,8 @@ const App: React.FC = () => {
         text: string,
         imageFile: File | null,
         clickedModule: string | null = null,
-        clickedOption: string | null = null
+        clickedOption: string | null = null,
+        step: number = currentStep
     ) => {
         if (!currentUser) {
             setIsAuthModalOpen(true);
@@ -203,7 +204,7 @@ const App: React.FC = () => {
                     intimacy: currentIntimacy,
                     userName,
                     currentFlow: activeFlow,
-                    currentStep: currentStep,
+                    currentStep: step,
                     clickedModule,
                     clickedOption,
                 }),
@@ -269,7 +270,7 @@ const App: React.FC = () => {
             });
 
             setIntimacyProgress(prev => Math.min(prev + Math.floor(Math.random() * 3) + 1, 100));
-            setCurrentStep(prev => prev + 1);
+            setCurrentStep(step + 1);
 
         } catch (error) {
             console.error('Error sending message:', error);
@@ -318,7 +319,7 @@ const App: React.FC = () => {
         };
         setMessages(prev => [...prev, userMessage]);
 
-        handleSendMessage(userMessageText, null, activeFlow, userMessageText);
+        handleSendMessage(userMessageText, null, activeFlow, userMessageText, currentStep + 1);
     };
 
     const handleDeleteMessage = useCallback((id: string) => {
