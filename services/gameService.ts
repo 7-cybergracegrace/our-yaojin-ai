@@ -34,7 +34,6 @@ const getSystemInstruction = (): string => {
 `;
 };
 
-
 /**
  * 处理“你说我画”的游戏流程
  * @param userInput 用户的绘画描述
@@ -44,11 +43,11 @@ const getSystemInstruction = (): string => {
 async function handleYouSayIWrite(userInput: string, currentStep: number): Promise<string> {
     console.log(`[GameService] '你说我画'，当前步骤: ${currentStep}, 用户输入: "${userInput}"`);
 
-    if (currentStep === 0) {
+    if (currentStep === 1) {
         return `知道了，快说，想让本道仙画什么稀奇古怪的东西？${character.gameRules?.games?.['你说我画'] ?? ''}`;
     }
 
-    if (currentStep === 1) {
+    if (currentStep === 2) {
         const imagePrompt = userInput.trim();
         if (!imagePrompt) {
             return "哼，光说不画？快点给出你那无聊的描述，本道仙等着呢。";
@@ -56,11 +55,12 @@ async function handleYouSayIWrite(userInput: string, currentStep: number): Promi
         
         const userPrompt = `以尧金的毒舌口吻，结合以下描述，生成一幅抽象风格的画作，并对作品进行一番评头论足。描述: "${imagePrompt}"`;
         const llmResponse = await getLLMResponse(getSystemInstruction(), userPrompt);
+
         return `[GENERATE_IMAGE]{"prompt": "${llmResponse}"}`;
     }
     
-    if (currentStep === 2) {
-        const userPrompt = `用户对你的画作的评价是：“${userInput}”。请用尧金的口吻，毒舌地对用户的评价进行一番嘲讽和点评，然后回到闲聊模式。`;
+    if (currentStep === 3) {
+        const userPrompt = `用户对你画作的评价是：“${userInput}”。请用尧金的口吻，毒舌地对用户的评价进行一番嘲讽和点评，然后回到闲聊模式。`;
         const llmResponse = await getLLMResponse(getSystemInstruction(), userPrompt);
         return llmResponse;
     }
@@ -77,13 +77,12 @@ async function handleYouSayIWrite(userInput: string, currentStep: number): Promi
 async function handleTruthOrDare(userInput: string, currentStep: number): Promise<string> {
     console.log(`[GameService] '真心话大冒险'，当前步骤: ${currentStep}, 用户输入: "${userInput}"`);
 
-    if (currentStep === 0) {
+    if (currentStep === 1) {
         const ruleText = character.gameRules?.games?.['真心话大冒险'] ?? '';
         return `哈，想玩这个？别后悔。${ruleText}。先选，真心话还是大冒险？`;
     }
 
-    if (currentStep === 1) {
-        // 【修改点3: 修正逻辑以匹配新的 JSON 格式】
+    if (currentStep === 2) {
         const userChoice = userInput.includes('真心话') ? '真心话' : '大冒险';
         
         const availableQuestions = truthOrDareQuestions.filter(q => q.type === userChoice);
@@ -95,7 +94,6 @@ async function handleTruthOrDare(userInput: string, currentStep: number): Promis
 
         const question = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
         
-        // 【修改点4: 从 'question' 字段获取内容】
         if (question.type === '真心话') {
             return `哈，真心话是吧？别后悔。来，回答本道仙：${question.question}`;
         } else {
@@ -103,7 +101,7 @@ async function handleTruthOrDare(userInput: string, currentStep: number): Promis
         }
     }
 
-    if (currentStep === 2) {
+    if (currentStep === 3) {
         const userPrompt = `用户对你提出的真心话或大冒险问题的回答是：“${userInput}”。请用尧金的口吻，毒舌地对用户的回答进行一番评价，然后结束游戏。`;
         const llmResponse = await getLLMResponse(getSystemInstruction(), userPrompt);
         return llmResponse;
@@ -121,19 +119,18 @@ async function handleTruthOrDare(userInput: string, currentStep: number): Promis
 async function handleStoryRelay(userInput: string, currentStep: number): Promise<string> {
     console.log(`[GameService] '故事接龙'，当前步骤: ${currentStep}, 用户输入: "${userInput}"`);
 
-    if (currentStep === 0) {
-        // 【修改点5: 从 'beginning' 字段获取故事开头】
+    if (currentStep === 1) {
         const starterItem = storyStarters[Math.floor(Math.random() * storyStarters.length)];
         return `哼，想玩故事接龙？本道仙先来。${starterItem.beginning}`;
     }
 
-    if (currentStep === 1) {
+    if (currentStep === 2) {
         const userPrompt = `这是故事的开头：“${storyStarters[Math.floor(Math.random() * storyStarters.length)].beginning}”。这是用户的接龙：“${userInput}”。请用尧金的口吻，给出一个出乎意料的荒诞转折。`;
         const llmResponse = await getLLMResponse(getSystemInstruction(), userPrompt);
         return `哦？你接得不错，但本道仙的思路可不是你这等凡人能猜到的。${llmResponse}`;
     }
 
-    if (currentStep === 2) {
+    if (currentStep === 3) {
         const userPrompt = `这是故事接龙的中间部分：“${userInput}”。请用尧金的口吻，给出一个离奇、荒诞或黑暗的结局。`;
         const llmResponse = await getLLMResponse(getSystemInstruction(), userPrompt);
         return `你这接得也太无聊了。不过没关系，本道仙已经想好结局了。${llmResponse}`;
