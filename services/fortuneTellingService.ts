@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getLLMResponse } from '../lib/llm.js';
 
-// --- 【新增】为不同的 config “形状”定义清晰的类型 ---
+// --- 类型定义 ---
 interface TarotCard {
     name: string;
     meaning: string;
@@ -24,16 +24,13 @@ interface GenerationConfig {
     generation_rules: GenerationRules;
 }
 
-// 一个步骤的 config，可能是这两种类型之一
 type StepConfig = MessageConfig | GenerationConfig;
-// --- 【新增结束】 ---
 
 const tarotCardPath = path.join(process.cwd(), 'data', 'tarot_cards.json');
 const tarotCards: TarotCard[] = JSON.parse(fs.readFileSync(tarotCardPath, 'utf-8'));
 
 type GuidanceFlowKey = keyof typeof character.guidanceFlows;
 
-// 【新增】意图到 flowKey 的映射
 function mapIntentToFlowKey(intent: string): GuidanceFlowKey | undefined {
     const map: { [key: string]: GuidanceFlowKey } = {
         '仙人指路_今日运势': 'daily_horoscope',
@@ -45,7 +42,6 @@ function mapIntentToFlowKey(intent: string): GuidanceFlowKey | undefined {
     };
     return map[intent];
 }
-
 
 async function getTarotReading(userTrouble: string): Promise<string> {
     console.log(`[FortuneTellingService] 开始进行塔罗牌解读，用户困惑: "${userTrouble}"`);
@@ -60,8 +56,8 @@ async function getTarotReading(userTrouble: string): Promise<string> {
 # 凡人的困惑: "${userTrouble}"
 # 抽到的牌面
 - 过去: ${card1.name} - ${card1.meaning}
-- 现在: ${card2.name} - ${card2.meaning}
-- 未来: ${card3.name} - ${card3.meaning}
+- 现在: ${card2.name} - ${2.meaning}
+- 未来: ${card3.name} - ${3.meaning}
 # 你的解读：`;
     return await callLLMForComment(userPrompt);
 }
@@ -82,59 +78,6 @@ async function getKarmaReading(target: string): Promise<string> {
     return await callLLMForComment(userPrompt);
 }
 
-export async function handleFortuneTelling(
-    intent: string,
-    userInput: string,
-    currentStep: number = 0
-): Promise<string> {
-    console.log(`[FortuneTellingService] 开始处理意图: ${intent}, 当前步骤: ${currentStep}`);
-    const flowKey = mapIntentToFlowKey(intent);
-    const flowConfig = flowKey ? character.guidanceFlows[flowKey] : undefined;
-
-    if (!flowConfig) {
-        console.warn(`[FortuneTellingService] 未找到匹配的流程配置：${intent}`);
-        return "哼，你的问题超出了本道仙的业务范围，换个问题吧。";
-    }
-
-    // 【核心修改】这里的步骤判断逻辑现在完全匹配 characterSheet.ts 中的 steps 数组
-    const currentStepConfig = flowConfig.steps?.[currentStep - 1]?.config as StepConfig;
-
-    if (currentStepConfig && 'message' in currentStepConfig) {
-        console.log(`[FortuneTellingService] 进入步骤 ${currentStep}，返回消息。`);
-        return currentStepConfig.message.replace('{userInput}', userInput);
-    }
-    
-    // 如果没有找到对应的消息配置，则执行核心逻辑
-    if (currentStep === 3) {
-        console.log(`[FortuneTellingService] 进入步骤 3，执行核心逻辑。`);
-        switch(flowKey) {
-            case 'tarot_reading':
-                console.log(`[FortuneTellingService] 匹配到塔罗启示。`);
-                return await getTarotReading(userInput);
-            case 'karma_reading':
-                console.log(`[FortuneTellingService] 匹配到窥探因果。`);
-                return await getKarmaReading(userInput);
-            default:
-                console.log(`[FortuneTellingService] 匹配到通用占卜。`);
-                const stepConfig = flowConfig.steps?.[2]?.config as StepConfig;
-                if (stepConfig && 'generation_rules' in stepConfig) {
-                    const rules = stepConfig.generation_rules;
-                    const prompt = `
-# 任务
-根据用户的输入和以下规则，生成一段占卜结果。
-# 用户输入: "${userInput}"
-# 生成规则: ${rules.content_points.join('; ')}
-# 参考示例: ${rules.example}
-# 你的解读:`;
-                    return await callLLMForComment(prompt);
-                }
-        }
-    }
-
-    console.warn(`[FortuneTellingService] 未匹配到任何步骤。`);
-    return "本道仙暂时无法解析，请稍后再试。";
-}
-
 async function callLLMForComment(userPrompt: string): Promise<string> {
     console.log('[FortuneTellingService] 正在调用大模型生成评论...');
     const systemPrompt = `你是${character.persona.name}，${character.persona.description}
@@ -151,4 +94,62 @@ async function callLLMForComment(userPrompt: string): Promise<string> {
         console.error('[FortuneTellingService] 大模型调用失败:', error);
         throw error;
     }
+}
+
+export async function handleFortuneTelling(
+    intent: string,
+    userInput: string,
+    currentStep: number = 0
+): Promise<string> {
+    console.log(`[FortuneTellingService] 开始处理意图: ${intent}, 当前步骤: ${currentStep}`);
+    const flowKey = mapIntentToFlowKey(intent);
+    const flowConfig = flowKey ? character.guidanceFlows[flowKey] : undefined;
+
+    if (!flowConfig) {
+        console.warn(`[FortuneTellingService] 未找到匹配的流程配置：${intent}`);
+        return "哼，你的问题超出了本道仙的业务范围，换个问题吧。";
+    }
+
+    const step1Config = flowConfig.steps?.[0]?.config as StepConfig;
+    if (currentStep === 1 && step1Config && 'message' in step1Config) {
+        console.log(`[FortuneTellingService] 进入步骤 1，返回引导信息。`);
+        return step1Config.message.replace('{userInput}', userInput);
+    }
+    
+    // 【核心修改】这里是处理连续执行的逻辑
+    if (currentStep === 2) {
+        console.log(`[FortuneTellingService] 进入步骤 2，处理用户输入并连续执行步骤 3。`);
+        
+        let responseText = '';
+        const step2Config = flowConfig.steps?.[1]?.config as StepConfig;
+        if (step2Config && 'message' in step2Config) {
+            responseText += step2Config.message.replace('{userInput}', userInput);
+        }
+
+        const step3Config = flowConfig.steps?.[2]?.config as StepConfig;
+        if (step3Config && 'generation_rules' in step3Config) {
+            const rules = step3Config.generation_rules;
+            const prompt = `
+# 任务
+根据用户的输入和以下规则，生成一段占卜结果。
+# 用户输入: "${userInput}"
+# 生成规则: ${rules.content_points.join('; ')}
+# 参考示例: ${rules.example}
+# 你的解读:`;
+            
+            try {
+                const finalResult = await callLLMForComment(prompt);
+                responseText += '\n\n' + finalResult;
+                console.log(`[FortuneTellingService] 成功连续获取步骤2和3的响应。`);
+            } catch (error) {
+                console.error('[FortuneTellingService] 连续执行大模型调用失败:', error);
+                responseText += '\n\n' + '哼，掐算天机时出了点岔子，稍后再说。';
+            }
+        }
+        
+        return responseText;
+    }
+
+    console.warn(`[FortuneTellingService] 未匹配到任何步骤。`);
+    return "本道仙暂时无法解析，请稍后再试。";
 }
