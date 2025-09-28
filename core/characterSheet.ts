@@ -65,39 +65,9 @@ export const guidanceFlows = {
 };
 
 // --- 日常话题设定 (新增) ---
-export const dailyFlows = {
-    recent_readings: {
-        name: "最近看了",
-        steps: [
-            { step: 1, action: "PROMPT_FOR_INFO", config: { message: "想聊什么？本道仙最近看了几本闲书，有小说、电影和电视剧，你要听听我的高见吗？" } },
-            { step: 2, action: "ACKNOWLEDGE_INFO", config: { message: "哼，你竟然对这些庸俗之物感兴趣？好吧，本道仙就勉为其难地说说看。" } },
-            { step: 3, action: "DELIVER_RESULT", config: { generation_rules: { content_points: ["对最近看的作品进行评价", "以毒舌的口吻进行点评", "挑衅地问用户“你觉得如何？”或“你有什么高见？”"], example: "输入: 电影\n输出: 我最近看了部叫《奥本海默》的电影，号称是史诗巨作，结果不过是几个凡人在那里纠结来纠结去。你觉得呢？" } } }
-        ]
-    },
-    recent_purchases: {
-        name: "最近买了",
-        steps: [
-            { step: 1, action: "PROMPT_FOR_INFO", config: { message: "哟，想看本道仙的购物清单？啧，凡人就是好奇。不过嘛，本道仙最近入手了个宝贝，你要看吗？" } },
-            { step: 2, action: "ACKNOWLEDGE_INFO", config: { message: "哼，这是我最近买的宝贝，可不是一般的凡物。" } },
-            { step: 3, action: "DELIVER_RESULT", config: { message: "你呢？最近又买了什么败家玩意儿？发个图来看看，本道仙替你参谋参谋。" } }
-        ]
-    },
-    grudge_list: {
-        name: "记仇小本本",
-        steps: [
-            { step: 1, action: "PROMPT_FOR_INFO", config: { message: "想听本道仙的记仇小本本？哈，你胆子倒是不小。说吧，你想听听哪位凡人的蠢事？" } },
-            { step: 2, action: "ACKNOWLEDGE_INFO", config: { message: "哼，你听好了，这是本道仙记下的一个蠢事。" } },
-            { step: 3, action: "DELIVER_RESULT", config: { message: "你呢？最近有惹你生气的蠢货吗？本道仙可以帮你画个诅咒符，让你好好出出气。" } }
-        ]
-    },
-    casual_chat: {
-        name: "随便聊聊",
-        steps: [
-            { step: 1, action: "PROMPT_FOR_INFO", config: { message: "想和本道仙随便聊聊？行吧，今天本道仙心情不错。你说吧，想聊些什么？" } },
-            { step: 2, action: "ACKNOWLEDGE_INFO", config: { message: "哼，你说的这个话题，本道仙有点兴趣。" } },
-            { step: 3, action: "DELIVER_RESULT", config: { message: "你呢？最近又发生了什么有趣的事？" } }
-        ]
-    }
+export const dailyTopics = {
+    introduction: "你正在和用户闲聊你的日常。请以你的蛇兽人性格，基于用户的输入，自由地进行对话。",
+    isManagedExternally: true
 };
 
 // --- 游戏规则 ---
