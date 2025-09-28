@@ -1,10 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as fs from 'fs';
 import * as path from 'path';
+
 import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
 import { handleFortuneTelling } from '../services/fortuneTellingService.js';
 import { handleGame } from '../services/gameService.js';
+import { handleMundaneGossip } from '../services/mundaneGossipService.js';
 import { handleGeneralChat } from '../services/chatService.js';
+
 import { Message, IntimacyLevel } from '../types/index.js';
 import * as character from '../core/characterSheet.js';
 
@@ -81,7 +84,7 @@ ${JSON.stringify(trainingData, null, 2)}
   return { intent: '闲聊' };
 }
 
-// --- 意图映射函数（新增）---
+// --- 意图映射函数 ---
 function mapClickedIntent(module: string, option: string): string | null {
     const intentMap: { [key: string]: string } = {
         'news_新鲜事': '俗世趣闻_新鲜事',
@@ -91,6 +94,8 @@ function mapClickedIntent(module: string, option: string): string | null {
         'guidance_塔罗启示': '仙人指路_塔罗启示',
         'guidance_正缘桃花': '仙人指路_正缘桃花',
         'guidance_事业罗盘': '仙人指路_事业罗盘',
+        'guidance_窥探因果': '仙人指路_窥探因果',
+        'guidance_综合占卜': '仙人指路_综合占卜',
         'daily_最近看了...': '道仙日常_最近看了',
         'daily_最近买了...': '道仙日常_最近买了',
         'daily_我的记仇小本本': '道仙日常_记仇小本本',
@@ -112,7 +117,7 @@ async function* sendMessageStream(
   intimacy: IntimacyLevel,
   userName: string,
   triageResult: { intent: string, context?: any },
-  currentStep?: number
+  step: number
 ): AsyncGenerator<Partial<Message>> {
   const { intent } = triageResult;
 
@@ -147,7 +152,7 @@ async function* sendMessageStream(
     case '游戏小摊_你说我画':
     case '游戏小摊_真心话大冒险':
     case '游戏小摊_故事接龙':
-      responseText = await handleGame(intent, userInput, currentStep);
+      responseText = await handleGame(intent, userInput, step);
       break;
     case '仙人指路_今日运势':
     case '仙人指路_塔罗启示':
@@ -155,7 +160,7 @@ async function* sendMessageStream(
     case '仙人指路_事业罗盘':
     case '仙人指路_窥探因果':
     case '仙人指路_综合占卜':
-      responseText = await handleFortuneTelling(intent, userInput, currentStep);
+      responseText = await handleFortuneTelling(intent, userInput, step);
       break;
     case '通用问题_二选一':
     case '通用问题_懒人思维':
@@ -188,7 +193,7 @@ async function* sendMessageStream(
             const data = JSON.parse(dataLine);
             const textDelta = data.choices?.[0]?.delta?.content || '';
             if (textDelta) {
-              yield { text: textDelta, isLoading: true };
+              yield { text: textDelta, isLoading: true, flow: intent, step };
             }
           }
         }
@@ -197,10 +202,10 @@ async function* sendMessageStream(
   }
 
   if (responseText) {
-    yield { text: responseText, isLoading: false };
+    yield { text: responseText, isLoading: false, flow: intent, step };
   }
 
-  yield { isLoading: false };
+  yield { isLoading: false, flow: intent, step };
 }
 
 // --- 辅助: 构造 system 指令 ---
@@ -253,24 +258,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     
     let triageResult = { intent: '闲聊' };
+    let step = currentStep || 0;
 
-    // 【修改点1】如果正在进行一个流程，则直接使用当前流程的意图
-    if (currentFlow !== 'default' && currentStep > 0 && !clickedModule) {
-        triageResult.intent = mapClickedIntent(currentFlow, text); // 假设用户输入的是下一步的选项
-        if (!triageResult.intent) {
-            console.warn(`[API] 无法从当前流程和输入中映射意图，退回到闲聊。流程: ${currentFlow}, 输入: ${text}`);
-            triageResult.intent = '闲聊';
-        } else {
-             console.log(`[API] 正在进行流程，意图为: ${triageResult.intent}`);
-        }
-    } else if (clickedModule && clickedOption) {
+    if (clickedModule && clickedOption) {
         const mappedIntent = mapClickedIntent(clickedModule, clickedOption);
         if (mappedIntent) {
             triageResult.intent = mappedIntent;
-            console.log(`[API] 检测到点击事件，映射意图为: ${triageResult.intent}`);
+            step = 1;
+            console.log(`[API] 检测到点击事件，映射意图为: ${triageResult.intent}, 步骤: ${step}`);
         } else {
             console.warn(`[API] 意图映射失败：${clickedModule}_${clickedOption}`);
         }
+    } else if (currentFlow !== 'default' && !clickedModule) {
+        // 【核心修改】当有正在进行的流程时，直接使用当前流程的意图
+        triageResult.intent = mapClickedIntent(currentFlow, text);
+        console.log(`[API] 正在进行流程，意图为: ${triageResult.intent}, 步骤: ${step}`);
     } else {
         triageResult = await runTriage(text);
         console.log(`[API] 文本分流结果:`, triageResult.intent);
@@ -282,8 +284,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'Cache-Control': 'no-cache',
     });
 
-    for await (const chunk of sendMessageStream(text, imageBase64, history, intimacy, userName, triageResult, currentStep)) {
-        res.write(JSON.stringify({ ...chunk, flow: triageResult.intent }) + '\n');
+    for await (const chunk of sendMessageStream(text, imageBase64, history, intimacy, userName, triageResult, step)) {
+        res.write(JSON.stringify(chunk) + '\n');
     }
     res.end();
 }
