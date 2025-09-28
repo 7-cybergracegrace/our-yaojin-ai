@@ -115,7 +115,7 @@ export async function handleFortuneTelling(
         console.log(`[FortuneTellingService] 进入步骤 1，返回引导信息。`);
         const step1Config = flowConfig.steps?.[0]?.config as StepConfig;
         if (step1Config && 'message' in step1Config) {
-            return step1Config.message;
+            return step1Config.message.replace('{userInput}', userInput);
         }
     }
     
