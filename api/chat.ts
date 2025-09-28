@@ -196,7 +196,7 @@ async function* sendMessageStream(
             const data = JSON.parse(dataLine);
             const textDelta = data.choices?.[0]?.delta?.content || '';
             if (textDelta) {
-              yield { text: textDelta, isLoading: true, flow: intent, step };
+              yield { text: textDelta, isLoading: true };
             }
           }
         }
@@ -205,10 +205,10 @@ async function* sendMessageStream(
   }
 
   if (responseText) {
-    yield { text: responseText, isLoading: false, flow: intent, step };
+    yield { text: responseText, isLoading: false };
   }
 
-  yield { isLoading: false, flow: intent, step };
+  yield { isLoading: false };
 }
 
 // --- 辅助: 构造 system 指令 ---
@@ -273,7 +273,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             console.warn(`[API] 意图映射失败：${clickedModule}_${clickedOption}`);
         }
     } else if (currentFlow !== 'default' && !clickedModule) {
-        // 【核心修改】当有正在进行的流程时，直接使用上一个流程的意图
         const mappedIntent = mapClickedIntent(currentFlow, text);
         triageResult.intent = mappedIntent || '闲聊';
         console.log(`[API] 正在进行流程，意图为: ${triageResult.intent}, 步骤: ${step}`);
