@@ -1,7 +1,10 @@
+// 文件: api/chat.ts
+
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as fs from 'fs';
 import * as path from 'path';
 
+// --- 修正：确保所有服务函数都被正确导入 ---
 import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
 import { handleFortuneTelling } from '../services/fortuneTellingService.js';
 import { handleGame } from '../services/gameService.js';
@@ -270,8 +273,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             console.warn(`[API] 意图映射失败：${clickedModule}_${clickedOption}`);
         }
     } else if (currentFlow !== 'default' && !clickedModule) {
-        // 【核心修改】当有正在进行的流程时，直接使用当前流程的意图
-        triageResult.intent = mapClickedIntent(currentFlow, text);
+        // 【核心修改】当有正在进行的流程时，直接使用上一个流程的意图
+        const mappedIntent = mapClickedIntent(currentFlow, text);
+        triageResult.intent = mappedIntent || '闲聊';
         console.log(`[API] 正在进行流程，意图为: ${triageResult.intent}, 步骤: ${step}`);
     } else {
         triageResult = await runTriage(text);
