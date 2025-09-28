@@ -4,7 +4,6 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// --- 修正：确保所有服务函数都被正确导入 ---
 import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
 import { handleFortuneTelling } from '../services/fortuneTellingService.js';
 import { handleGame } from '../services/gameService.js';
@@ -99,8 +98,8 @@ function mapClickedIntent(module: string, option: string): string | null {
         'guidance_事业罗盘': '仙人指路_事业罗盘',
         'guidance_窥探因果': '仙人指路_窥探因果',
         'guidance_综合占卜': '仙人指路_综合占卜',
-        'daily_最近看了...': '道仙日常_最近看了',
-        'daily_最近买了...': '道仙日常_最近买了',
+        'daily_最近看了…': '道仙日常_最近看了',
+        'daily_最近买了…': '道仙日常_最近买了',
         'daily_我的记仇小本本': '道仙日常_记仇小本本',
         'daily_随便聊聊…': '道仙日常_随便聊聊',
         'game_你说我画': '游戏小摊_你说我画',
@@ -251,7 +250,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return;
     }
 
-    const { text, imageBase64, history, intimacy, userName, currentStep, clickedModule, clickedOption, currentFlow } = req.body;
+    const { text, imageBase64, history, intimacy, userName, currentStep, clickedModule, clickedOption, currentFlow, activeIntent } = req.body;
     
     console.log('[API] 接收到请求，模块:', clickedModule, '选项:', clickedOption, '文本:', text);
 
@@ -262,7 +261,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     let triageResult = { intent: '闲聊' };
     let step = currentStep || 0;
-
+    
+    // 【修改点1】优先处理点击事件，并设置完整的意图
     if (clickedModule && clickedOption) {
         const mappedIntent = mapClickedIntent(clickedModule, clickedOption);
         if (mappedIntent) {
@@ -272,11 +272,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } else {
             console.warn(`[API] 意图映射失败：${clickedModule}_${clickedOption}`);
         }
-    } else if (currentFlow !== 'default' && !clickedModule) {
-        triageResult.intent = `仙人指路_${currentFlow}`;
-        step += 1;
+    } 
+    // 【修改点2】如果不是点击事件，但处于一个流程中，则直接使用上一个意图
+    else if (activeIntent) {
+        triageResult.intent = activeIntent;
         console.log(`[API] 正在进行流程，意图为: ${triageResult.intent}, 步骤: ${step}`);
-    } else {
+    }
+    // 【修改点3】否则，退回到通用意图识别
+    else {
         triageResult = await runTriage(text);
         console.log(`[API] 文本分流结果:`, triageResult.intent);
     }
