@@ -33,6 +33,20 @@ const tarotCards: TarotCard[] = JSON.parse(fs.readFileSync(tarotCardPath, 'utf-8
 
 type GuidanceFlowKey = keyof typeof character.guidanceFlows;
 
+// 【新增】意图到 flowKey 的映射
+function mapIntentToFlowKey(intent: string): GuidanceFlowKey | undefined {
+    const map: { [key: string]: GuidanceFlowKey } = {
+        '仙人指路_今日运势': 'daily_horoscope',
+        '仙人指路_塔罗启示': 'tarot_reading',
+        '仙人指路_正缘桃花': 'destined_romance',
+        '仙人指路_事业罗盘': 'career_compass',
+        '仙人指路_窥探因果': 'karma_reading',
+        '仙人指路_综合占卜': 'comprehensive_reading',
+    };
+    return map[intent];
+}
+
+
 async function getTarotReading(userTrouble: string): Promise<string> {
     console.log(`[FortuneTellingService] 开始进行塔罗牌解读，用户困惑: "${userTrouble}"`);
     const card1 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
@@ -74,16 +88,16 @@ export async function handleFortuneTelling(
     currentStep: number = 0
 ): Promise<string> {
     console.log(`[FortuneTellingService] 开始处理意图: ${intent}, 当前步骤: ${currentStep}`);
-    const flowKey = intent.replace('仙人指路_', '') as GuidanceFlowKey;
-    const flowConfig = character.guidanceFlows[flowKey];
+    // 【修改点】使用新的映射函数来获取 flowKey
+    const flowKey = mapIntentToFlowKey(intent);
+    
+    const flowConfig = flowKey ? character.guidanceFlows[flowKey] : undefined;
 
     if (!flowConfig) {
         console.warn(`[FortuneTellingService] 未找到匹配的流程配置：${intent}`);
         return "哼，你的问题超出了本道仙的业务范围，换个问题吧。";
     }
 
-    // --- 【重构逻辑】更清晰的步骤处理 ---
-    // 步骤1：处理意图，如果当前步骤为0，返回引导信息
     if (currentStep === 0) {
         console.log(`[FortuneTellingService] 进入步骤 0，返回引导信息。`);
         const stepConfig = flowConfig.steps?.[0]?.config as StepConfig;
@@ -92,7 +106,6 @@ export async function handleFortuneTelling(
         }
     }
     
-    // 步骤2：处理用户输入，进入下一阶段
     if (currentStep === 1) {
         console.log(`[FortuneTellingService] 进入步骤 1，处理用户输入: "${userInput}"`);
         const stepConfig = flowConfig.steps?.[1]?.config as StepConfig;
@@ -101,7 +114,6 @@ export async function handleFortuneTelling(
         }
     }
 
-    // 步骤3：执行核心逻辑
     if (currentStep === 2) {
         console.log(`[FortuneTellingService] 进入步骤 2，执行核心逻辑。`);
         switch(flowKey) {
@@ -112,7 +124,6 @@ export async function handleFortuneTelling(
                 console.log(`[FortuneTellingService] 匹配到窥探因果。`);
                 return await getKarmaReading(userInput);
             default:
-                // 处理其他类型的占卜（如运势、桃花、事业）
                 console.log(`[FortuneTellingService] 匹配到通用占卜。`);
                 const stepConfig = flowConfig.steps?.[2]?.config as StepConfig;
                 if (stepConfig && 'generation_rules' in stepConfig) {
@@ -129,7 +140,6 @@ export async function handleFortuneTelling(
         }
     }
 
-    // 如果没有匹配到任何步骤，返回错误
     console.warn(`[FortuneTellingService] 未匹配到任何步骤。`);
     return "本道仙暂时无法解析，请稍后再试。";
 }
