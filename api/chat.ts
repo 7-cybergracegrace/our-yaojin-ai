@@ -1,10 +1,7 @@
-// 文件: api/chat.ts
-
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// --- 修正：确保所有服务函数都被正确导入 ---
 import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
 import { handleFortuneTelling } from '../services/fortuneTellingService.js';
 import { handleGame } from '../services/gameService.js';
@@ -272,10 +269,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } else {
             console.warn(`[API] 意图映射失败：${clickedModule}_${clickedOption}`);
         }
+    // 【核心修改】这里才是处理流程的逻辑
+    // 当 currentFlow 不是 default 并且没有点击任何按钮时，说明是用户输入了文本
     } else if (currentFlow !== 'default' && !clickedModule) {
-        const mappedIntent = mapClickedIntent(currentFlow, text);
-        triageResult.intent = mappedIntent || '闲聊';
-        console.log(`[API] 正在进行流程，意图为: ${triageResult.intent}, 步骤: ${step}`);
+        // 我们需要找到上一个流程的意图
+        const flowModule = currentFlow;
+        const flowOption = '占卜'; // 或者你可以用一个更通用的词
+        const mappedIntent = mapClickedIntent(flowModule, flowOption);
+        if (mappedIntent) {
+            triageResult.intent = mappedIntent;
+            step += 1;
+            console.log(`[API] 正在进行流程，意图为: ${triageResult.intent}, 步骤: ${step}`);
+        } else {
+            // 如果无法映射，就退回到闲聊
+            console.warn(`[API] 无法从当前流程和输入中映射意图，退回到闲聊。流程: ${currentFlow}, 输入: ${text}`);
+            triageResult.intent = '闲聊';
+        }
     } else {
         triageResult = await runTriage(text);
         console.log(`[API] 文本分流结果:`, triageResult.intent);
