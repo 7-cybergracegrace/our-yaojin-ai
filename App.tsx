@@ -310,8 +310,9 @@ const App: React.FC = () => {
     };
 
     const handleQuickReplyClick = (replyText: string) => {
+        // 【修改点: 不再递增 currentStep，直接发送当前的 step】
         const userMessageText = replyText.trim();
-        const newStep = currentStep + 1;
+        const newStep = currentStep;
         
         handleSendMessage(userMessageText, null, activeFlow, userMessageText, newStep);
     };
