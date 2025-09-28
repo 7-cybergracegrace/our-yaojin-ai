@@ -1,4 +1,5 @@
 // 文件: App.tsx
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ChatInput from './components/ChatInput';
 import ChatMessage from './components/ChatMessage';
@@ -310,15 +311,9 @@ const App: React.FC = () => {
 
     const handleQuickReplyClick = (replyText: string) => {
         const userMessageText = replyText.trim();
-        const userMessage: Message = {
-            id: `user-${Date.now()}`,
-            sender: 'user',
-            text: userMessageText,
-            intimacy: currentIntimacy,
-        };
-        setMessages(prev => [...prev, userMessage]);
-
-        handleSendMessage(userMessageText, null, activeFlow, userMessageText, currentStep + 1);
+        const newStep = currentStep + 1;
+        
+        handleSendMessage(userMessageText, null, activeFlow, userMessageText, newStep);
     };
 
     const handleDeleteMessage = useCallback((id: string) => {
