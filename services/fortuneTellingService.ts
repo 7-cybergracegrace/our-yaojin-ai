@@ -43,17 +43,11 @@ function mapIntentToFlowKey(intent: string): GuidanceFlowKey | undefined {
     return map[intent];
 }
 
-// --- 工具函数：抽取随机牌 ---
-function drawCards(count: number): TarotCard[] {
-    return Array.from({ length: count }, () =>
-        tarotCards[Math.floor(Math.random() * tarotCards.length)]
-    );
-}
-
-// --- 塔罗解读 ---
 async function getTarotReading(userTrouble: string): Promise<string> {
     console.log(`[FortuneTellingService] 开始进行塔罗牌解读，用户困惑: "${userTrouble}"`);
-    const [card1, card2, card3] = drawCards(3);
+    const card1 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+    const card2 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+    const card3 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
     console.log(`[FortuneTellingService] 抽到的牌面：${card1.name}, ${card2.name}, ${card3.name}`);
 
     const userPrompt = `
@@ -68,10 +62,12 @@ async function getTarotReading(userTrouble: string): Promise<string> {
     return await callLLMForComment(userPrompt);
 }
 
-// --- 因果解读 ---
 async function getKarmaReading(target: string): Promise<string> {
     console.log(`[FortuneTellingService] 开始窥探因果，目标: "${target}"`);
-    const [card1, card2, card3, card4] = drawCards(4);
+    const card1 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+    const card2 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+    const card3 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
+    const card4 = tarotCards[Math.floor(Math.random() * tarotCards.length)];
     console.log(`[FortuneTellingService] 抽到的牌面：${card1.name}, ${card2.name}, ${card3.name}, ${card4.name}`);
     
     const userPrompt = `
@@ -82,7 +78,6 @@ async function getKarmaReading(target: string): Promise<string> {
     return await callLLMForComment(userPrompt);
 }
 
-// --- 大模型调用 ---
 async function callLLMForComment(userPrompt: string): Promise<string> {
     console.log('[FortuneTellingService] 正在调用大模型生成评论...');
     const systemPrompt = `你是${character.persona.name}，${character.persona.description}
@@ -101,7 +96,6 @@ async function callLLMForComment(userPrompt: string): Promise<string> {
     }
 }
 
-// --- 主流程 ---
 export async function handleFortuneTelling(
     intent: string,
     userInput: string,
@@ -120,22 +114,13 @@ export async function handleFortuneTelling(
         console.log(`[FortuneTellingService] 进入步骤 1，返回引导信息。`);
         const step1Config = flowConfig.steps?.[0]?.config as StepConfig;
         if (step1Config && 'message' in step1Config) {
-            return step1Config.message;
+            return step1Config.message.replace('{userInput}', userInput);
         }
     }
     
     if (currentStep === 2) {
         console.log(`[FortuneTellingService] 进入步骤 2，处理用户输入并连续执行步骤 3。`);
-
-        // 🔮 特殊 intent：直接触发专属占卜（等价于 step2+step3 一起走）
-        if (intent === '仙人指路_塔罗启示') {
-            return await getTarotReading(userInput);
-        }
-        if (intent === '仙人指路_窥探因果') {
-            return await getKarmaReading(userInput);
-        }
-
-        // 👉 其它 intent 按照通用流程 step2 + step3
+        
         let responseText = '';
         const step2Config = flowConfig.steps?.[1]?.config as StepConfig;
         if (step2Config && 'message' in step2Config) {
@@ -164,7 +149,7 @@ export async function handleFortuneTelling(
             } else if ('message' in step3Config) {
                 responseText += '\n\n' + step3Config.message;
             } else {
-                console.warn(`[FortuneTellingService] 步骤3配置无效：缺少'generation_rules'或'message'。`);
+                 console.warn(`[FortuneTellingService] 步骤3配置无效：缺少'generation_rules'或'message'。`);
             }
         } else {
             console.warn(`[FortuneTellingService] 未找到步骤3配置。`);
