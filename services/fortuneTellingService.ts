@@ -88,9 +88,7 @@ export async function handleFortuneTelling(
     currentStep: number = 0
 ): Promise<string> {
     console.log(`[FortuneTellingService] 开始处理意图: ${intent}, 当前步骤: ${currentStep}`);
-    // 【修改点】使用新的映射函数来获取 flowKey
     const flowKey = mapIntentToFlowKey(intent);
-    
     const flowConfig = flowKey ? character.guidanceFlows[flowKey] : undefined;
 
     if (!flowConfig) {
@@ -98,24 +96,17 @@ export async function handleFortuneTelling(
         return "哼，你的问题超出了本道仙的业务范围，换个问题吧。";
     }
 
-    if (currentStep === 0) {
-        console.log(`[FortuneTellingService] 进入步骤 0，返回引导信息。`);
-        const stepConfig = flowConfig.steps?.[0]?.config as StepConfig;
-        if (stepConfig && 'message' in stepConfig) {
-            return stepConfig.message;
-        }
+    // 【核心修改】这里的步骤判断逻辑现在完全匹配 characterSheet.ts 中的 steps 数组
+    const currentStepConfig = flowConfig.steps?.[currentStep - 1]?.config as StepConfig;
+
+    if (currentStepConfig && 'message' in currentStepConfig) {
+        console.log(`[FortuneTellingService] 进入步骤 ${currentStep}，返回消息。`);
+        return currentStepConfig.message.replace('{userInput}', userInput);
     }
     
-    if (currentStep === 1) {
-        console.log(`[FortuneTellingService] 进入步骤 1，处理用户输入: "${userInput}"`);
-        const stepConfig = flowConfig.steps?.[1]?.config as StepConfig;
-        if (stepConfig && 'message' in stepConfig) {
-            return stepConfig.message.replace('{userInput}', userInput);
-        }
-    }
-
-    if (currentStep === 2) {
-        console.log(`[FortuneTellingService] 进入步骤 2，执行核心逻辑。`);
+    // 如果没有找到对应的消息配置，则执行核心逻辑
+    if (currentStep === 3) {
+        console.log(`[FortuneTellingService] 进入步骤 3，执行核心逻辑。`);
         switch(flowKey) {
             case 'tarot_reading':
                 console.log(`[FortuneTellingService] 匹配到塔罗启示。`);
