@@ -10,8 +10,7 @@ const reviewPath = path.join(process.cwd(), 'data', '文艺评论.json');
 const shoppingListPath = path.join(process.cwd(), 'data', '购物清单.json');
 const grudgeListPath = path.join(process.cwd(), 'data', '记仇小本本.json');
 const lifestyleScenesPath = path.join(process.cwd(), 'data', '生活小事.json');
-// 因为你的文件中没有这个文件，所以注释掉
-// const curseListPath = path.join(process.cwd(), 'data', '尧金的诅咒库.json');
+
 
 // --- 类型定义 ---
 interface ReviewItem {
