@@ -250,7 +250,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return;
     }
 
-    const { text, imageBase64, history, intimacy, userName, currentStep, clickedModule, clickedOption, currentFlow, activeIntent } = req.body;
+    const { text, imageBase64, history, intimacy, userName, currentStep, clickedModule, clickedOption, currentFlow } = req.body;
     
     console.log('[API] 接收到请求，模块:', clickedModule, '选项:', clickedOption, '文本:', text);
 
@@ -261,8 +261,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     let triageResult = { intent: '闲聊' };
     let step = currentStep || 0;
-    
-    // 【修改点1】优先处理点击事件，并设置完整的意图
+
     if (clickedModule && clickedOption) {
         const mappedIntent = mapClickedIntent(clickedModule, clickedOption);
         if (mappedIntent) {
@@ -272,14 +271,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } else {
             console.warn(`[API] 意图映射失败：${clickedModule}_${clickedOption}`);
         }
-    } 
-    // 【修改点2】如果不是点击事件，但处于一个流程中，则直接使用上一个意图
-    else if (activeIntent) {
-        triageResult.intent = activeIntent;
+    } else if (currentFlow !== 'default' && !clickedModule) {
+        triageResult.intent = `仙人指路_${currentFlow}`;
+        step += 1;
         console.log(`[API] 正在进行流程，意图为: ${triageResult.intent}, 步骤: ${step}`);
-    }
-    // 【修改点3】否则，退回到通用意图识别
-    else {
+    } else {
         triageResult = await runTriage(text);
         console.log(`[API] 文本分流结果:`, triageResult.intent);
     }
