@@ -1,3 +1,5 @@
+// 文件: components/ChatMessage.tsx
+
 import React from 'react';
 import { Message } from '../types';
 import DivinationCard from './DivinationCard';
@@ -77,13 +79,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, userAvatar, isLastMe
 
   const bubbleStyle = !isUser ? getYaojinBubbleStyle(intimacyLevel) : {};
   
-  // --- [ 核心修改在这里 ] ---
   const bubbleClasses = [
-    'inline-block', // 关键：直接使用 Tailwind 的类来解决换行问题
+    'inline-block',
     'px-4 py-3 rounded-xl shadow-md',
-    'max-w-[90%]', // 手机上的最大宽度
-    'md:max-w-lg', // 在中等屏幕及以上使用稍大的最大宽度
-    'text-left',   // 确保多行文本左对齐
+    'max-w-[90%]',
+    'md:max-w-lg',
+    'text-left',
     isUser
       ? 'bg-[var(--user-bubble-color)] text-[var(--text-on-light)] rounded-br-none'
       : 'text-[var(--text-on-dark)] rounded-bl-none',
@@ -103,7 +104,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, userAvatar, isLastMe
       <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
         <div className={bubbleClasses} style={bubbleStyle}>
           {message.isLoading ? ( <LoadingIndicator /> ) : 
-           message.errorType ? ( renderErrorMessage() ) : (
+            message.errorType ? ( renderErrorMessage() ) : (
             <>
               {message.image && ( <div className="mb-2 rounded-md overflow-hidden border border-black/10"><img src={message.image} alt="uploaded content" className="max-w-xs" /></div> )}
               {message.generatedImageBase64 && (
@@ -133,7 +134,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, userAvatar, isLastMe
         {isLastMessage && !isUser && message.quickReplies && message.quickReplies.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
             {message.quickReplies.map((reply, index) => (
-              <button key={index} onClick={() => onQuickReply(reply)} className="bg-white/70 text-[var(--yaojin-bubble-color)] font-medium text-sm px-3 py-1.5 rounded-full border border-white hover:bg-white transition-colors shadow-sm backdrop-blur-sm">
+              // 【核心修改】添加 event 参数并调用 stopPropagation()
+              <button key={index} onClick={(event) => { event.stopPropagation(); onQuickReply(reply); }} className="bg-white/70 text-[var(--yaojin-bubble-color)] font-medium text-sm px-3 py-1.5 rounded-full border border-white hover:bg-white transition-colors shadow-sm backdrop-blur-sm">
                 {reply}
               </button>
             ))}
@@ -145,8 +147,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, userAvatar, isLastMe
 
       {isUser && (
        <div className="w-10 h-10 rounded-full bg-slate-200 flex-shrink-0 border-2 border-white overflow-hidden shadow-md flex items-center justify-center">
-          {userAvatar ? ( <img src={userAvatar} alt="你的头像" className="w-full h-full object-cover" /> ) : ( <img src="/default-user-avatar.png" alt="你的头像" className="w-full h-full object-cover" /> )}
-      </div>
+         {userAvatar ? ( <img src={userAvatar} alt="你的头像" className="w-full h-full object-cover" /> ) : ( <img src="/default-user-avatar.png" alt="你的头像" className="w-full h-full object-cover" /> )}
+       </div>
       )}
     </div>
   );
