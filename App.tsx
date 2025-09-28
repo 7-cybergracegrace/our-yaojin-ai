@@ -1,5 +1,4 @@
 // 文件: App.tsx
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ChatInput from './components/ChatInput';
 import ChatMessage from './components/ChatMessage';
