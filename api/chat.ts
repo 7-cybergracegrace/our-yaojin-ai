@@ -1,11 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as fs from 'fs';
 import * as path from 'path';
-import { withApiHandler } from '../lib/apiHandler.js';
 import { handleDaoistDailyChoice } from '../services/daoistDailyService.js';
 import { handleFortuneTelling } from '../services/fortuneTellingService.js';
 import { handleGame } from '../services/gameService.js';
-import { handleMundaneGossip } from '../services/mundaneGossipService.js';
 import { handleGeneralChat } from '../services/chatService.js';
 import { Message, IntimacyLevel } from '../types/index.js';
 import * as character from '../core/characterSheet.js';
@@ -93,10 +91,10 @@ function mapClickedIntent(module: string, option: string): string | null {
         'guidance_塔罗启示': '仙人指路_塔罗启示',
         'guidance_正缘桃花': '仙人指路_正缘桃花',
         'guidance_事业罗盘': '仙人指路_事业罗盘',
-        'daily_最近看了...': '道仙日常_最近看了', // 修改为与前端完全匹配
+        'daily_最近看了...': '道仙日常_最近看了',
         'daily_最近买了...': '道仙日常_最近买了',
         'daily_我的记仇小本本': '道仙日常_记仇小本本',
-        'daily_随便聊聊...': '道仙日常_随便聊聊',
+        'daily_随便聊聊…': '道仙日常_随便聊聊',
         'game_你说我画': '游戏小摊_你说我画',
         'game_真心话大冒险': '游戏小摊_真心话大冒险',
         'game_故事接龙': '游戏小摊_故事接龙',
@@ -239,41 +237,53 @@ const convertToApiMessages = (
 };
 
 // Vercel/Next.js 路由处理器
-export default withApiHandler(['POST'], async (req: VercelRequest, res: VercelResponse) => {
-  const { text, imageBase64, history, intimacy, userName, currentStep, clickedModule, clickedOption } = req.body;
-  
-  console.log('[API] 接收到请求，模块:', clickedModule, '选项:', clickedOption, '文本:', text);
-
-  if (!text && !imageBase64 && !clickedModule) {
-    res.status(400).json({ error: 'Text, image, or module selection is required' });
-    return;
-  }
-  
-  let triageResult = { intent: '闲聊' };
-
-  if (clickedModule && clickedOption) {
-    const mappedIntent = mapClickedIntent(clickedModule, clickedOption);
-    if (mappedIntent) {
-        triageResult.intent = mappedIntent;
-        console.log(`[API] 检测到点击事件，映射意图为: ${triageResult.intent}`);
-    } else {
-        console.warn(`[API] 意图映射失败：${clickedModule}_${clickedOption}`);
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+    if (req.method !== 'POST') {
+        res.status(405).json({ error: 'Method Not Allowed' });
+        return;
     }
-  } else {
-    triageResult = await runTriage(text);
-    console.log(`[API] 文本分流结果:`, triageResult.intent);
-  }
 
-  res.writeHead(200, {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Transfer-Encoding': 'chunked',
-      'Cache-Control': 'no-cache',
-  });
+    const { text, imageBase64, history, intimacy, userName, currentStep, clickedModule, clickedOption, currentFlow } = req.body;
+    
+    console.log('[API] 接收到请求，模块:', clickedModule, '选项:', clickedOption, '文本:', text);
 
-  let chunkIdx = 0;
-  for await (const chunk of sendMessageStream(text, imageBase64, history, intimacy, userName, triageResult, currentStep)) {
-    res.write(JSON.stringify({ ...chunk, flow: triageResult.intent }) + '\n');
-    chunkIdx++;
-  }
-  res.end();
-});
+    if (!text && !imageBase64 && !clickedModule) {
+        res.status(400).json({ error: 'Text, image, or module selection is required' });
+        return;
+    }
+    
+    let triageResult = { intent: '闲聊' };
+
+    // 【修改点1】如果正在进行一个流程，则直接使用当前流程的意图
+    if (currentFlow !== 'default' && currentStep > 0 && !clickedModule) {
+        triageResult.intent = mapClickedIntent(currentFlow, text); // 假设用户输入的是下一步的选项
+        if (!triageResult.intent) {
+            console.warn(`[API] 无法从当前流程和输入中映射意图，退回到闲聊。流程: ${currentFlow}, 输入: ${text}`);
+            triageResult.intent = '闲聊';
+        } else {
+             console.log(`[API] 正在进行流程，意图为: ${triageResult.intent}`);
+        }
+    } else if (clickedModule && clickedOption) {
+        const mappedIntent = mapClickedIntent(clickedModule, clickedOption);
+        if (mappedIntent) {
+            triageResult.intent = mappedIntent;
+            console.log(`[API] 检测到点击事件，映射意图为: ${triageResult.intent}`);
+        } else {
+            console.warn(`[API] 意图映射失败：${clickedModule}_${clickedOption}`);
+        }
+    } else {
+        triageResult = await runTriage(text);
+        console.log(`[API] 文本分流结果:`, triageResult.intent);
+    }
+
+    res.writeHead(200, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Transfer-Encoding': 'chunked',
+        'Cache-Control': 'no-cache',
+    });
+
+    for await (const chunk of sendMessageStream(text, imageBase64, history, intimacy, userName, triageResult, currentStep)) {
+        res.write(JSON.stringify({ ...chunk, flow: triageResult.intent }) + '\n');
+    }
+    res.end();
+}
