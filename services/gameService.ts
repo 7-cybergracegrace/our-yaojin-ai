@@ -5,19 +5,24 @@ import * as path from 'path';
 import * as character from '../core/characterSheet.js';
 import { getLLMResponse } from '../lib/llm.js';
 
-// 【代码健壮性】为 JSON 数据定义类型，让 TypeScript 帮你检查数据结构
+// --- 【修改点1: 更新类型定义以匹配新的 JSON 格式】---
 interface TruthOrDareItem {
-    type: 'truth' | 'dare';
-    content: string;
+    type: '真心话' | '大冒险';
+    question: string;
 }
 
-// 【修改点1: 修正文件路径】
+interface StoryRelayItem {
+    category: string;
+    beginning: string;
+}
+
+// 【修改点2: 修正文件路径】
 const truthOrDarePath = path.join(process.cwd(), 'data', '真心话大冒险.json');
 const storyRelayPath = path.join(process.cwd(), 'data', '故事接龙.json');
 
 // 读取知识库文件
 const truthOrDareQuestions: TruthOrDareItem[] = JSON.parse(fs.readFileSync(truthOrDarePath, 'utf-8'));
-const storyStarters: string[] = JSON.parse(fs.readFileSync(storyRelayPath, 'utf-8'));
+const storyStarters: StoryRelayItem[] = JSON.parse(fs.readFileSync(storyRelayPath, 'utf-8'));
 
 // 【新增辅助函数】生成系统指令
 const getSystemInstruction = (): string => {
@@ -40,28 +45,21 @@ async function handleYouSayIWrite(userInput: string, currentStep: number): Promi
     console.log(`[GameService] '你说我画'，当前步骤: ${currentStep}, 用户输入: "${userInput}"`);
 
     if (currentStep === 0) {
-        // 第一步：给出游戏规则并要求用户开始
         return `知道了，快说，想让本道仙画什么稀奇古怪的东西？${character.gameRules?.games?.['你说我画'] ?? ''}`;
     }
 
     if (currentStep === 1) {
-        // 第二步：用户给出描述，进行文生图
         const imagePrompt = userInput.trim();
         if (!imagePrompt) {
             return "哼，光说不画？快点给出你那无聊的描述，本道仙等着呢。";
         }
         
-        // 【修改点2: 构造 LLM Prompt 并调用】
         const userPrompt = `以尧金的毒舌口吻，结合以下描述，生成一幅抽象风格的画作，并对作品进行一番评头论足。描述: "${imagePrompt}"`;
         const llmResponse = await getLLMResponse(getSystemInstruction(), userPrompt);
-
-        // 返回一个特殊的格式，以便前端识别并调用文生图能力
         return `[GENERATE_IMAGE]{"prompt": "${llmResponse}"}`;
     }
     
-    // 第三步：评价作品，回到闲聊模式
     if (currentStep === 2) {
-        // 【修改点3: 使用 LLM 来评价作品】
         const userPrompt = `用户对你的画作的评价是：“${userInput}”。请用尧金的口吻，毒舌地对用户的评价进行一番嘲讽和点评，然后回到闲聊模式。`;
         const llmResponse = await getLLMResponse(getSystemInstruction(), userPrompt);
         return llmResponse;
@@ -80,14 +78,13 @@ async function handleTruthOrDare(userInput: string, currentStep: number): Promis
     console.log(`[GameService] '真心话大冒险'，当前步骤: ${currentStep}, 用户输入: "${userInput}"`);
 
     if (currentStep === 0) {
-        // 第一步：给出游戏规则并要求用户选择
         const ruleText = character.gameRules?.games?.['真心话大冒险'] ?? '';
         return `哈，想玩这个？别后悔。${ruleText}。先选，真心话还是大冒险？`;
     }
 
     if (currentStep === 1) {
-        // 【逻辑修正】
-        const userChoice = userInput.includes('真心话') ? 'truth' : 'dare';
+        // 【修改点3: 修正逻辑以匹配新的 JSON 格式】
+        const userChoice = userInput.includes('真心话') ? '真心话' : '大冒险';
         
         const availableQuestions = truthOrDareQuestions.filter(q => q.type === userChoice);
 
@@ -98,15 +95,15 @@ async function handleTruthOrDare(userInput: string, currentStep: number): Promis
 
         const question = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
         
-        if (question.type === 'truth') {
-            return `哈，真心话是吧？别后悔。来，回答本道仙：${question.content}`;
+        // 【修改点4: 从 'question' 字段获取内容】
+        if (question.type === '真心话') {
+            return `哈，真心话是吧？别后悔。来，回答本道仙：${question.question}`;
         } else {
-            return `哈，大冒险是吧？别怂。来，本道仙命令你：${question.content}`;
+            return `哈，大冒险是吧？别怂。来，本道仙命令你：${question.question}`;
         }
     }
 
     if (currentStep === 2) {
-        // 【修改点4: 使用 LLM 来评价回答】
         const userPrompt = `用户对你提出的真心话或大冒险问题的回答是：“${userInput}”。请用尧金的口吻，毒舌地对用户的回答进行一番评价，然后结束游戏。`;
         const llmResponse = await getLLMResponse(getSystemInstruction(), userPrompt);
         return llmResponse;
@@ -125,22 +122,18 @@ async function handleStoryRelay(userInput: string, currentStep: number): Promise
     console.log(`[GameService] '故事接龙'，当前步骤: ${currentStep}, 用户输入: "${userInput}"`);
 
     if (currentStep === 0) {
-        // 第一步：给出规则并开始故事
-        const starter = storyStarters[Math.floor(Math.random() * storyStarters.length)];
-        return `哼，想玩故事接龙？本道仙先来。${starter}`;
+        // 【修改点5: 从 'beginning' 字段获取故事开头】
+        const starterItem = storyStarters[Math.floor(Math.random() * storyStarters.length)];
+        return `哼，想玩故事接龙？本道仙先来。${starterItem.beginning}`;
     }
 
     if (currentStep === 1) {
-        // 第二步：根据用户接龙，给出出乎意料的转折
-        // 【修改点5: 使用 LLM 来生成转折】
-        const userPrompt = `这是故事的开头：“${storyStarters[Math.floor(Math.random() * storyStarters.length)]}”。这是用户的接龙：“${userInput}”。请用尧金的口吻，给出一个出乎意料的荒诞转折。`;
+        const userPrompt = `这是故事的开头：“${storyStarters[Math.floor(Math.random() * storyStarters.length)].beginning}”。这是用户的接龙：“${userInput}”。请用尧金的口吻，给出一个出乎意料的荒诞转折。`;
         const llmResponse = await getLLMResponse(getSystemInstruction(), userPrompt);
         return `哦？你接得不错，但本道仙的思路可不是你这等凡人能猜到的。${llmResponse}`;
     }
 
     if (currentStep === 2) {
-        // 第三步：给出最终的离奇结尾
-        // 【修改点6: 使用 LLM 来生成结局】
         const userPrompt = `这是故事接龙的中间部分：“${userInput}”。请用尧金的口吻，给出一个离奇、荒诞或黑暗的结局。`;
         const llmResponse = await getLLMResponse(getSystemInstruction(), userPrompt);
         return `你这接得也太无聊了。不过没关系，本道仙已经想好结局了。${llmResponse}`;
