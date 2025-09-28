@@ -311,7 +311,7 @@ const App: React.FC = () => {
 
     const handleQuickReplyClick = (replyText: string) => {
         const userMessageText = replyText.trim();
-        const newStep = 1;
+        const newStep = currentStep;
         
         handleSendMessage(userMessageText, null, activeFlow, userMessageText, newStep);
         setCurrentStep(newStep);
