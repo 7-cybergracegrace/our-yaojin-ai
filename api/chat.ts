@@ -272,6 +272,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             console.warn(`[API] 意图映射失败：${clickedModule}_${clickedOption}`);
         }
     } else if (currentFlow !== 'default' && !clickedModule) {
+        // 【核心修改】当有正在进行的流程时，直接使用上一个流程的意图
         triageResult.intent = `仙人指路_${currentFlow}`;
         step += 1;
         console.log(`[API] 正在进行流程，意图为: ${triageResult.intent}, 步骤: ${step}`);
