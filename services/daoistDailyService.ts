@@ -28,7 +28,6 @@ interface GrudgeItem {
     event: string;
     curse: string;
 }
-// 【新增】为生活小事定义类型
 interface LifestyleItem {
     type: string;
     topic: string;
@@ -38,8 +37,9 @@ interface LifestyleItem {
 const reviews: ReviewItem[] = JSON.parse(fs.readFileSync(reviewPath, 'utf-8'));
 const shoppingItems: ShoppingItem[] = JSON.parse(fs.readFileSync(shoppingListPath, 'utf-8'));
 const grudgeEvents: GrudgeItem[] = JSON.parse(fs.readFileSync(grudgeListPath, 'utf-8'));
-// 【修改点1: 导入新类型】
 const lifestyleScenes: LifestyleItem[] = JSON.parse(fs.readFileSync(lifestyleScenesPath, 'utf-8'));
+// 因为你的文件中没有这个文件，所以注释掉
+// const curses: { content: string }[] = JSON.parse(fs.readFileSync(curseListPath, 'utf-8'));
 
 // --- 辅助函数：生成系统指令 ---
 const getSystemInstruction = (): string => {
@@ -79,7 +79,6 @@ async function getReviewByType(reviewType: ReviewItem['type']): Promise<string> 
 
 async function getShoppingItem(): Promise<string> {
     console.log('[DaoistDailyService] 正在获取购物清单。');
-    const shoppingItems: ShoppingItem[] = JSON.parse(fs.readFileSync(shoppingListPath, 'utf-8'));
     const item = shoppingItems[Math.floor(Math.random() * shoppingItems.length)];
     const userPrompt = `以尧金的口吻，描述以下购物清单中的一个项目。描述要生动有趣，最好能引人吐槽，并邀请用户分享自己最近买了什么。
     商品名称：${item.name}
@@ -98,7 +97,6 @@ async function getShoppingItem(): Promise<string> {
 
 async function getGrudgeEvent(): Promise<string> {
     console.log('[DaoistDailyService] 正在获取记仇事件。');
-    const grudgeEvents: GrudgeItem[] = JSON.parse(fs.readFileSync(grudgeListPath, 'utf-8'));
     const grudge = grudgeEvents[Math.floor(Math.random() * grudgeEvents.length)];
     console.log('[DaoistDailyService] 成功获取记仇事件。');
     const userPrompt = `以尧金的口吻，描述以下一个事件，并邀请用户分享自己讨厌的人或事。在描述中提及你会为讨厌的人画诅咒符。
@@ -115,13 +113,10 @@ async function getGrudgeEvent(): Promise<string> {
     }
 }
 
-// 【修改点2: 重写 getLifestyleScene 函数】
 async function getLifestyleScene(): Promise<string> {
     console.log('[DaoistDailyService] 正在获取生活场景。');
     const scene = lifestyleScenes[Math.floor(Math.random() * lifestyleScenes.length)];
     console.log('[DaoistDailyService] 成功获取生活场景。');
-
-    // 直接返回 topic 的内容
     return scene.topic;
 }
 
