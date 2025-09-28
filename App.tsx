@@ -318,7 +318,6 @@ const App: React.FC = () => {
         };
         setMessages(prev => [...prev, userMessage]);
 
-        // 【修改点: 调用 handleSendMessage，并传递当前状态】
         handleSendMessage(userMessageText, null, activeFlow, userMessageText);
     };
 
