@@ -157,7 +157,36 @@ export async function handleFortuneTelling(
         
         return responseText;
     }
-    
+
+    if (currentStep === 3) {
+        console.log(`[FortuneTellingService] 进入步骤 3，执行核心逻辑。`);
+        switch (flowKey) {
+            case 'tarot_reading':
+                console.log(`[FortuneTellingService] 匹配到塔罗启示。`);
+                return await getTarotReading(userInput);
+            case 'karma_reading':
+                console.log(`[FortuneTellingService] 匹配到窥探因果。`);
+                return await getKarmaReading(userInput);
+            default:
+                console.log(`[FortuneTellingService] 匹配到通用占卜。`);
+                const stepConfig = flowConfig.steps?.[2]?.config as StepConfig;
+                if (stepConfig && 'generation_rules' in stepConfig) {
+                    const rules = stepConfig.generation_rules;
+                    const prompt = `
+# 任务
+根据用户的输入和以下规则，生成一段占卜结果。
+# 用户输入: "${userInput}"
+# 生成规则: ${rules.content_points.join('; ')}
+# 参考示例: ${rules.example}
+# 你的解读:`;
+                    return await callLLMForComment(prompt);
+                }
+                if (stepConfig && 'message' in stepConfig) {
+                    return stepConfig.message;
+                }
+        }
+    }
+
     console.warn(`[FortuneTellingService] 未匹配到任何步骤。`);
     return "本道仙暂时无法解析，请稍后再试。";
 }
